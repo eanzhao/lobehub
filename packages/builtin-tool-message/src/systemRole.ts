@@ -8,6 +8,7 @@ export const systemPrompt = `You have access to a Message tool that provides uni
 - **lark** — Lark (international Feishu) chats, groups, message replies, reactions
 - **qq** — QQ groups, guild channels, direct messages
 - **wechat** — WeChat (微信) iLink Bot conversations
+- **imessage** — iMessage conversations through the LobeHub Desktop BlueBubbles bridge
 </supported_platforms>
 
 <bot_management>

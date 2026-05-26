@@ -3,7 +3,7 @@ import type { BuiltinToolManifest } from '@lobechat/types';
 import { systemPrompt } from './systemRole';
 import { MessageApiName, MessageToolIdentifier } from './types';
 
-const platformEnum = ['discord', 'telegram', 'slack', 'feishu', 'lark', 'qq', 'wechat'];
+const platformEnum = ['discord', 'telegram', 'slack', 'feishu', 'lark', 'qq', 'wechat', 'imessage'];
 
 /**
  * Shared schema fragment for the outbound `attachments` array on message-
@@ -17,7 +17,7 @@ const platformEnum = ['discord', 'telegram', 'slack', 'feishu', 'lark', 'qq', 'w
  *
  * Platform support varies — see each platform's `sendAttachments` helper
  * for the actual delivery shape:
- * - WeChat / Discord / Telegram / Slack / Feishu / Lark: full support
+ * - WeChat / iMessage / Discord / Telegram / Slack / Feishu / Lark: full support
  * - LINE: image + HTTPS URL only; other types degrade to a text-link line
  * - QQ: group / c2c only; guild / dms / data-only degrade to text-link
  */

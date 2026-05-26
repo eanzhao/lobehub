@@ -1,0 +1,103 @@
+---
+title: 将 LobeHub 连接到 iMessage
+description: >-
+  了解如何通过 LobeHub Desktop 本地 BlueBubbles 桥接，将 iMessage 账号连接到 LobeHub 代理。
+
+tags:
+  - iMessage
+  - BlueBubbles
+  - 消息渠道
+  - Bot 设置
+  - 集成
+---
+
+# 将 LobeHub 连接到 iMessage
+
+LobeHub 通过运行在 Messages 登录 Mac 上的 [BlueBubbles](https://bluebubbles.app/) 接入 iMessage。BlueBubbles 只需要和同机或局域网内的 LobeHub Desktop 通信。Desktop 会把入站事件转发到 LobeHub，并把云端回复通过本地 BlueBubbles REST API 发回 iMessage，因此不再需要把 BlueBubbles 暴露到公网。
+
+```text
+iMessage 用户 -> macOS Messages -> BlueBubbles -> LobeHub Desktop -> LobeHub
+LobeHub Agent -> Device Gateway -> LobeHub Desktop -> BlueBubbles -> iMessage 用户
+```
+
+## 前置条件
+
+- 一台已登录目标 Apple ID 的 Mac
+- 已在这台 Mac 上安装 [BlueBubbles Server](https://bluebubbles.app/)
+- LobeHub Desktop 已登录并连接 Device Gateway
+- BlueBubbles API 密码
+- Desktop 可以访问的 LobeHub 部署
+
+> **Private API 说明：** BlueBubbles 可以通过 AppleScript 发送基础文本和附件。输入状态、消息特效等高级能力依赖 BlueBubbles Private API，可能需要在 Mac 上关闭 SIP。LobeHub 的基础收发只依赖文本 / 附件能力。
+
+## 步骤 1：设置 BlueBubbles
+
+<Steps>
+  ### 安装 BlueBubbles Server
+
+  在承载 iMessage 账号的 Mac 上安装 BlueBubbles Server，并确保这台 Mac 保持唤醒和联网。
+
+  ### 开启 API 访问
+
+  在 BlueBubbles Server 中设置一个强密码。LobeHub Desktop 会在本机调用 BlueBubbles REST API 时使用这个密码。
+
+  ### 保持本地访问
+
+  使用 `http://127.0.0.1:1234` 或局域网地址即可，不再需要公网 HTTPS BlueBubbles URL。
+</Steps>
+
+## 步骤 2：配置 Desktop 桥接
+
+<Steps>
+  ### 打开 LobeHub Desktop
+
+  登录同一个 LobeHub 账号，并确认 Device Gateway 已连接。
+
+  ### 添加 iMessage bridge 配置
+
+  填入和云端渠道相同的 **Application ID** 与 **Webhook Secret**。BlueBubbles 本地 URL 和密码只保存在 Desktop 端。
+
+  ### 启动桥接
+
+  LobeHub Desktop 会启动一个本地 loopback HTTP listener，并在 BlueBubbles 中注册指向 `127.0.0.1` 的 `new-message` webhook。
+</Steps>
+
+## 步骤 3：在 LobeHub 配置 iMessage
+
+<Steps>
+  ### 打开渠道设置
+
+  在 LobeHub 中进入代理设置，选择 **渠道**，然后点击 **iMessage**。
+
+  ### 填写云端凭据
+
+  1. **Application ID** — 填一个稳定标识，例如 `home-mac-mini`。
+  2. **Desktop Device ID** — 运行 BlueBubbles 桥接的 LobeHub Desktop 设备。
+  3. **Webhook Secret** — 与 Desktop 桥接配置中相同的随机共享密钥。
+
+  ### 保存并连接
+
+  点击 **保存**，然后点击 **连接**。LobeHub 会通过 Device Gateway 让对应 Desktop 在本地 ping BlueBubbles。
+</Steps>
+
+## 步骤 4：测试 Bot
+
+向 BlueBubbles Mac 上登录的 Apple ID 或手机号发送一条 iMessage。LobeHub Desktop 应该会收到本地 `new-message` webhook，转发给 LobeHub，运行代理，并在同一个 iMessage 会话中回复。
+
+## 功能说明
+
+- **Markdown** — iMessage 接收纯文本。LobeHub 会在发送最终回复前移除 Markdown 标记。
+- **消息编辑** — iMessage 回复会作为新消息发送，LobeHub 会跳过中间步骤的进度编辑。
+- **附件** — 入站和出站附件通过 Desktop 桥接和 BlueBubbles 附件 API 中转。
+- **输入状态** — 如果 BlueBubbles Private API 可用，会尝试发送 typing；不可用时会静默跳过，不影响正常回复。
+- **群聊** — BlueBubbles 消息事件中包含 `chatGuid` 时可支持 iMessage 群聊。限制群组访问时，请把 `chatGuid` 填入允许频道。
+- **防回环** — 由 Mac 账号自己发出的消息会被忽略，避免机器人回复自己的回复。
+
+## 故障排查
+
+- **连接时报 `DEVICE_OFFLINE`。** 确认 LobeHub Desktop 已打开、已登录，并且保存到渠道中的设备 ID 正在连接 Device Gateway。
+- **连接时报 BlueBubbles 错误。** 检查 Desktop 桥接中的本地 BlueBubbles URL 和密码。
+- **Bot 完全不回复。** 确认 BlueBubbles webhook 指向 `127.0.0.1:<desktop-port>`，并且 secret 与 LobeHub 保存的一致。
+- **Webhook 返回 401。** Desktop 和云端渠道的 webhook secret 不一致。
+- **消息能发出，但 typing 失败。** 通常是 BlueBubbles Private API 未开启；这不影响普通回复。
+- **附件失败。** 确认附件已在 Mac 上下载完成，并且 BlueBubbles 可以在本地提供该附件。

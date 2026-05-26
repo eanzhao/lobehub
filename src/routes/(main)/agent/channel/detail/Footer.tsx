@@ -117,9 +117,12 @@ const Footer = memo<FooterProps>(
       hasUserIdField &&
       !(typeof effectiveUserId === 'string' && effectiveUserId.trim());
 
-    const webhookUrl = applicationId
-      ? `${origin}/api/agent/webhooks/${platformId}/${applicationId}`
-      : `${origin}/api/agent/webhooks/${platformId}`;
+    const webhookUrl = useMemo(() => {
+      const path = applicationId
+        ? `/api/agent/webhooks/${platformId}/${applicationId}`
+        : `/api/agent/webhooks/${platformId}`;
+      return `${origin}${path}`;
+    }, [applicationId, origin, platformId]);
 
     return (
       <div className={styles.bottom}>
