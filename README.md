@@ -2,6 +2,12 @@
 
 [![][image-banner]][vercel-link]
 
+> **Aevatar Desktop** is built on top of LobeHub. End-user UI strings,
+> bundle identifiers, and product naming have been rebranded to Aevatar,
+> while the underlying code, package layout, and LICENSE / NOTICE files
+> are preserved upstream. See `tools/ci/brand-guard.sh` for the rebrand
+> contract enforced in CI.
+
 # LobeHub
 
 LobeHub organizes your agents into 7×24 operation.

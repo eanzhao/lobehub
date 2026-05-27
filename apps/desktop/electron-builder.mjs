@@ -214,7 +214,8 @@ const config = {
       console.info(`⏭️  Skipping Assets.car (not found or copy failed)`);
     }
   },
-  appId: 'com.lobehub.lobehub-desktop',
+  appId: 'com.aevatar.desktop',
+  productName: 'Aevatar Desktop',
   appImage: {
     artifactName: '${productName}-${version}.${ext}',
   },
@@ -339,7 +340,7 @@ const config = {
   ],
 
   win: {
-    executableName: 'LobeHub',
+    executableName: 'Aevatar',
   },
 };
 

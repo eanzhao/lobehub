@@ -2,11 +2,13 @@
 // if you want to use it in the commercial usage
 // please contact us for more information: hello@lobehub.com
 
-export const LOBE_CHAT_CLOUD = 'LobeHub Cloud';
+export const LOBE_CHAT_CLOUD = 'Aevatar Cloud';
 
-export const BRANDING_NAME = 'LobeHub';
+export const BRANDING_NAME = 'Aevatar';
 export const BRANDING_LOGO_URL = '';
 
+// ORG_NAME is the legal entity tied to upstream LobeHub Inc.; keep as-is for
+// copyright / NOTICE attribution. End-user display uses BRANDING_NAME instead.
 export const ORG_NAME = 'LobeHub';
 
 export const BRANDING_URL = {

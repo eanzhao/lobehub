@@ -1,5 +1,6 @@
 export default {
   'about': 'About',
+  'aboutCredit': 'Based on LobeHub — see third-party notices for license details.', // brand-guard:allow
   'advanceSettings': 'Advanced Settings',
   'alert.cloud.action': 'Try now',
   'alert.cloud.desc':
@@ -37,7 +38,7 @@ export default {
   'messengerBanner.title': 'Talk to Lobe AI on your favorite messaging apps',
   'branching': 'Create Subtopic',
   'branchingDisable':
-    'The "Sub-topic" feature is unavailable in the current mode. To use this feature, please switch to Postgres/Pglite DB mode or use LobeHub Cloud.',
+    'The "Sub-topic" feature is unavailable in the current mode. To use this feature, please switch to Postgres/Pglite DB mode or use Aevatar Cloud.',
   'branchingRequiresSavedTopic':
     'Current topic is not saved, please save it first to use subtopic feature',
   'cancel': 'Cancel',

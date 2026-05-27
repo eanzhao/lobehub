@@ -2,6 +2,11 @@
 
 [![][image-banner]][vercel-link]
 
+> **Aevatar Desktop** 基于 LobeHub 构建。所有面向最终用户的 UI 文案、桌面
+> 包标识符及产品命名已重命名为 Aevatar，而底层代码、包结构及 LICENSE /
+> NOTICE 文件均保持上游原样。CI 中执行的重命名契约见
+> `tools/ci/brand-guard.sh`。
+
 # LobeHub
 
 LobeHub 帮你把专属 Agent 组织成 7×24 不打烊的高效队伍：
