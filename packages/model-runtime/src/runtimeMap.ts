@@ -1,3 +1,4 @@
+import { LobeAevatarAI } from './providers/aevatar';
 import { LobeAi21AI } from './providers/ai21';
 import { Lobe302AI } from './providers/ai302';
 import { LobeAi360AI } from './providers/ai360';
@@ -84,6 +85,7 @@ export const providerRuntimeMap = {
   ai302: Lobe302AI,
   ai360: LobeAi360AI,
   aihubmix: LobeAiHubMixAI,
+  aevatar: LobeAevatarAI,
   akashchat: LobeAkashChatAI,
   anthropic: LobeAnthropicAI,
   bailiancodingplan: LobeBailianCodingPlanAI,

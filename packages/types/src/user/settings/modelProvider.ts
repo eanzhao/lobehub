@@ -8,6 +8,7 @@ export interface ProviderConfig {
    * whether to auto fetch model lists
    */
   autoFetchModelLists?: boolean;
+  baseURL?: string;
   /**
    * user defined model cards
    */

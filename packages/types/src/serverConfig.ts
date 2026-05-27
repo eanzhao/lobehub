@@ -40,6 +40,7 @@ export interface VisualUnderstandingConfig {
 }
 
 export interface ServerModelProviderConfig {
+  baseURL?: string;
   enabled?: boolean;
   enabledModels?: string[];
   fetchOnClient?: boolean;

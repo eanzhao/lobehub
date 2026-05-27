@@ -29,6 +29,7 @@ export interface ClientSecretPayload {
 
   cloudflareBaseURLOrAccountID?: string;
   customHeaders?: Record<string, string>;
+  nyxIdToken?: string;
   /**
    * GitHub Copilot OAuth fields
    */

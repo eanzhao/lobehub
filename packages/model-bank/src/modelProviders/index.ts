@@ -2,6 +2,7 @@ import { ENABLE_BUSINESS_FEATURES } from '@lobechat/business-const';
 
 import type { ChatModelCard, ModelProviderCard } from '@/types/llm';
 
+import AevatarProvider from './aevatar';
 import Ai21Provider from './ai21';
 import Ai302Provider from './ai302';
 import Ai360Provider from './ai360';
@@ -142,6 +143,7 @@ export const LOBE_DEFAULT_MODEL_LIST: ChatModelCard[] = [
 
 export const DEFAULT_MODEL_PROVIDER_LIST = [
   ...(ENABLE_BUSINESS_FEATURES ? [LobeHubProvider] : []),
+  AevatarProvider,
   AnthropicProvider,
   GoogleProvider,
   GLMCodingPlanProvider,
@@ -235,6 +237,7 @@ export const isProviderDisableBrowserRequest = (id: string) => {
   return !!provider;
 };
 
+export { default as AevatarProviderCard } from './aevatar';
 export { default as Ai21ProviderCard } from './ai21';
 export { default as Ai302ProviderCard } from './ai302';
 export { default as Ai360ProviderCard } from './ai360';

@@ -7,6 +7,7 @@ import { getLLMConfig } from '@/envs/llm';
 import { extractEnabledModels, transformToAiModelList } from '@/utils/server/parseModels';
 
 interface ProviderSpecificConfig {
+  baseURL?: string;
   enabled?: boolean;
   enabledKey?: string;
   fetchOnClient?: boolean;
@@ -59,6 +60,9 @@ export const genServerAiProvidersConfig = async (
 
       return {
         config: {
+          ...(providerConfig.baseURL !== undefined && {
+            baseURL: providerConfig.baseURL,
+          }),
           enabled:
             typeof providerConfig.enabled !== 'undefined'
               ? providerConfig.enabled
