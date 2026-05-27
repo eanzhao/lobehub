@@ -32,6 +32,11 @@ export const getServerGlobalConfig = async () => {
 
   const config: GlobalServerConfig = {
     aiProvider: await genServerAiProvidersConfig({
+      aevatar: {
+        baseURL: process.env.AEVATAR_BASE_URL,
+        enabled: true,
+        fetchOnClient: true,
+      },
       ...(ENABLE_BUSINESS_FEATURES
         ? {
             lobehub: {

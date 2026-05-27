@@ -14,15 +14,26 @@ import { getNyxIdAuthStoreState } from '@/store/auth/nyxid-slice';
 
 import { resolveRuntimeProvider } from './chat/helper';
 
-export const getProviderAuthPayload = (
-  provider: string,
-  keyVaults: OpenAICompatibleKeyVault &
-    AzureOpenAIKeyVault &
-    AWSBedrockKeyVault &
-    CloudflareKeyVault &
-    ComfyUIKeyVault &
-    VertexAIKeyVault,
-) => {
+type ProviderAuthKeyVaults = OpenAICompatibleKeyVault &
+  AzureOpenAIKeyVault &
+  AWSBedrockKeyVault &
+  CloudflareKeyVault &
+  ComfyUIKeyVault &
+  VertexAIKeyVault;
+
+const getBuiltinProviderBaseURL = (provider: string): string | undefined => {
+  if (typeof window === 'undefined') return undefined;
+
+  const serverConfig = window.global_serverConfigStore?.getState()?.serverConfig;
+  const runtimeConfig =
+    serverConfig?.aiProvider?.[provider as keyof typeof serverConfig.aiProvider];
+
+  return runtimeConfig && 'baseURL' in runtimeConfig
+    ? (runtimeConfig.baseURL as string | undefined)
+    : undefined;
+};
+
+export const getProviderAuthPayload = (provider: string, keyVaults: ProviderAuthKeyVaults) => {
   switch (provider) {
     case ModelProvider.Bedrock: {
       const { accessKeyId, region, secretAccessKey, sessionToken } = keyVaults;
@@ -90,6 +101,17 @@ export const getProviderAuthPayload = (
       };
     }
 
+    case ModelProvider.Aevatar: {
+      const token = getNyxIdAuthStoreState().token;
+
+      return {
+        apiKey: token,
+        baseURL:
+          keyVaults?.baseURL || getBuiltinProviderBaseURL(provider) || process.env.AEVATAR_BASE_URL,
+        nyxIdToken: token,
+      };
+    }
+
     default: {
       return { apiKey: clientApiKeyManager.pick(keyVaults?.apiKey), baseURL: keyVaults?.baseURL };
     }
@@ -103,12 +125,14 @@ interface AuthParams {
 
 export const createPayloadWithKeyVaults = (provider: string) => {
   const keyVaults =
-    aiProviderSelectors.providerKeyVaults(provider)(useAiInfraStore.getState()) || {};
+    (aiProviderSelectors.providerKeyVaults(provider)(useAiInfraStore.getState()) as
+      | ProviderAuthKeyVaults
+      | undefined) || {};
 
   const runtimeProvider = resolveRuntimeProvider(provider);
 
   return {
-    ...getProviderAuthPayload(runtimeProvider, keyVaults as any),
+    ...getProviderAuthPayload(runtimeProvider, keyVaults),
     runtimeProvider,
   };
 };

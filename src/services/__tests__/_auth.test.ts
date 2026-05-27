@@ -194,4 +194,21 @@ describe('getProviderAuthPayload', () => {
       Authorization: 'Bearer nyxid-token',
     });
   });
+
+  it('returns NyxID token and baseURL payload for aevatar provider', () => {
+    const originalBaseUrl = process.env.AEVATAR_BASE_URL;
+    process.env.AEVATAR_BASE_URL = 'https://aevatar.example.com/api/scopes/demo';
+
+    act(() => {
+      useNyxIdAuthStore.getState().setNyxIdAuthenticated({ token: 'nyxid-token' });
+    });
+
+    expect(getProviderAuthPayload(ModelProvider.Aevatar, {})).toEqual({
+      apiKey: 'nyxid-token',
+      baseURL: 'https://aevatar.example.com/api/scopes/demo',
+      nyxIdToken: 'nyxid-token',
+    });
+
+    process.env.AEVATAR_BASE_URL = originalBaseUrl;
+  });
 });

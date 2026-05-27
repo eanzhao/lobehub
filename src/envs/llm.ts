@@ -222,6 +222,9 @@ export const getLLMConfig = () => {
       ENABLED_AIHUBMIX: z.boolean(),
       AIHUBMIX_API_KEY: z.string().optional(),
 
+      ENABLED_AEVATAR: z.boolean(),
+      AEVATAR_BASE_URL: z.string().optional(),
+
       ENABLED_NEWAPI: z.boolean(),
       NEWAPI_API_KEY: z.string().optional(),
       NEWAPI_PROXY_URL: z.string().optional(),
@@ -468,6 +471,9 @@ export const getLLMConfig = () => {
 
       ENABLED_AIHUBMIX: !!process.env.AIHUBMIX_API_KEY,
       AIHUBMIX_API_KEY: process.env.AIHUBMIX_API_KEY,
+
+      ENABLED_AEVATAR: !!process.env.AEVATAR_BASE_URL,
+      AEVATAR_BASE_URL: process.env.AEVATAR_BASE_URL,
 
       ENABLED_NEWAPI: !!process.env.NEWAPI_API_KEY,
       NEWAPI_API_KEY: process.env.NEWAPI_API_KEY,

@@ -1,5 +1,6 @@
 import type { ModelProvider } from '../const/modelProvider';
 import { type AiFullModelCard, type LobeDefaultAiModelListItem } from '../types/aiModel';
+import { default as aevatar } from './aevatar';
 import { default as ai21 } from './ai21';
 import { default as ai302 } from './ai302';
 import { default as ai360 } from './ai360';
@@ -110,6 +111,7 @@ const staticModelMap: ModelsMap = {
   ai302,
   ai360,
   aihubmix,
+  aevatar,
   akashchat,
   anthropic,
   azure,
@@ -219,6 +221,7 @@ export const loadModels = async (
 };
 
 export { gptImage1Schema, gptImage2Schema } from '../const/imageParameters';
+export { default as aevatar } from './aevatar';
 export { default as ai21 } from './ai21';
 export { default as ai302 } from './ai302';
 export { default as ai360 } from './ai360';

@@ -178,6 +178,13 @@ const getParamsFromPayload = (provider: string, payload: ClientSecretPayload) =>
       return {};
     }
 
+    case ModelProvider.Aevatar: {
+      return {
+        apiKey: apiKeyManager.pick(payload?.apiKey),
+        baseURL: payload?.baseURL || process.env.AEVATAR_BASE_URL,
+      };
+    }
+
     default: {
       let upperProvider = provider.toUpperCase();
 
