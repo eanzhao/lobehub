@@ -1,5 +1,19 @@
-import type { ChatStreamCallbacks, MessageToolCall, MessageToolCallChunk } from '../../types';
-import type { AguiAny, AguiEventEnvelope, LobehubStreamEvent } from './types';
+import type { ChatStreamCallbacks, MessageToolCall } from '../../types';
+import type { AevatarToolCallChunk, AguiAny, AguiEventEnvelope, LobehubStreamEvent } from './types';
+
+/**
+ * Tag applied to every tool-call chunk produced by the aevatar codec.
+ * Lets downstream renderers / selectors recognise GAgent-origin tool calls
+ * without losing them in the generic `source` lookup.
+ */
+const AEVATAR_TOOL_SOURCE = 'aevatar' as const;
+
+/**
+ * Dispatch target for tool calls produced by the aevatar codec. The aevatar
+ * GAgent has already executed the tool server-side, so the agent-runtime
+ * client guard uses this marker to skip re-invocation.
+ */
+const AEVATAR_TOOL_EXECUTOR = 'server' as const;
 
 const SSE_DELIMITER = '\n\n';
 const textEncoder = new TextEncoder();
@@ -83,7 +97,7 @@ const emitToolCallChunk = async (
   controller: TransformStreamDefaultController<Uint8Array>,
   callbacks: ChatStreamCallbacks | undefined,
   state: StreamState,
-  chunk: MessageToolCallChunk,
+  chunk: AevatarToolCallChunk,
 ) => {
   emitEvent(controller, {
     data: [chunk],
@@ -233,12 +247,14 @@ const translateEvent = async (
     state.toolCallNames.set(toolCallId, toolName);
 
     await emitToolCallChunk(controller, callbacks, state, {
+      executor: AEVATAR_TOOL_EXECUTOR,
       function: {
         arguments: '',
         name: toolName,
       },
       id: toolCallId,
       index,
+      source: AEVATAR_TOOL_SOURCE,
       type: 'function',
     });
     return;
@@ -250,12 +266,14 @@ const translateEvent = async (
     const toolName = state.toolCallNames.get(toolCallId) || '';
 
     await emitToolCallChunk(controller, callbacks, state, {
+      executor: AEVATAR_TOOL_EXECUTOR,
       function: {
         arguments: '',
         name: toolName,
       },
       id: toolCallId,
       index,
+      source: AEVATAR_TOOL_SOURCE,
       type: 'function',
     });
     emitWorkflowState(
