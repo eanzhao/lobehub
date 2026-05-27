@@ -18,6 +18,7 @@ import { Notebook } from './Notebook';
 import { Plugins } from './Plugins';
 import { Thread } from './Thread';
 import { type PortalImpl } from './type';
+import { WorkflowInspector } from './WorkflowInspector';
 
 // View type to component mapping
 const VIEW_COMPONENTS: Record<PortalViewType, PortalImpl> = {
@@ -34,6 +35,7 @@ const VIEW_COMPONENTS: Record<PortalViewType, PortalImpl> = {
   [PortalViewType.ToolUI]: Plugins,
   [PortalViewType.Thread]: Thread,
   [PortalViewType.GroupThread]: GroupThread,
+  [PortalViewType.WorkflowInspector]: WorkflowInspector,
 };
 
 // Default Home component

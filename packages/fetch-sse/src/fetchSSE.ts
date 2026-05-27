@@ -93,6 +93,20 @@ interface MessageToolCallsChunk {
   type: 'tool_calls';
 }
 
+/**
+ * Workflow state events emitted by the aevatar AGUI codec
+ * (see `packages/model-runtime/src/providers/aevatar/stream.ts`). The
+ * payload is opaque to the SSE layer — feature code (WorkflowInspector)
+ * interprets it. We forward the raw `data` so the layer stays decoupled
+ * from the codec's evolving payload shape.
+ */
+export interface MessageWorkflowStateChunk {
+  /** Optional `id:` from the SSE frame — typically a stepId or toolCallId. */
+  id?: string;
+  payload: unknown;
+  type: 'workflow_state';
+}
+
 export interface FetchSSERequestContext {
   apiMode?: string;
   fetchOnClient?: boolean;
@@ -116,7 +130,8 @@ export interface FetchSSEOptions {
       | MessageUsageChunk
       | MessageBase64ImageChunk
       | MessageSpeedChunk
-      | MessageStopChunk,
+      | MessageStopChunk
+      | MessageWorkflowStateChunk,
   ) => void;
   requestContext?: FetchSSERequestContext;
   responseAnimation?: ResponseAnimation;
@@ -501,6 +516,19 @@ export const fetchSSE = async (url: string, options: RequestInit & FetchSSEOptio
           if (!toolCalls) toolCalls = [];
           toolCalls = parseToolCalls(toolCalls, data);
           options.onMessageHandle?.({ tool_calls: toolCalls, type: 'tool_calls' });
+          break;
+        }
+
+        case 'workflow_state': {
+          // Forward AGUI workflow events (emitted by the aevatar codec — see
+          // `packages/model-runtime/src/providers/aevatar/stream.ts`). The
+          // SSE layer stays opaque; downstream features unpack the payload.
+          options.onMessageHandle?.({
+            id: ev.id || undefined,
+            payload: data,
+            type: 'workflow_state',
+          });
+          break;
         }
       }
     },

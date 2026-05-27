@@ -718,4 +718,55 @@ describe('fetchSSE', () => {
       });
     });
   });
+
+  // Issue #6: AGUI workflow events emitted by the aevatar codec are forwarded
+  // as a dedicated chunk so feature code (WorkflowInspector) can subscribe
+  // without inspecting raw SSE frames.
+  describe('workflow_state forwarding', () => {
+    it('forwards workflow_state SSE frames as workflow_state chunks', async () => {
+      const mockOnMessageHandle = vi.fn();
+
+      (fetchEventSource as any).mockImplementationOnce(
+        (_url: string, options: FetchEventSourceInit) => {
+          options.onopen!({ clone: () => ({ ok: true, headers: new Headers() }) } as any);
+          options.onmessage!({
+            data: JSON.stringify({ stepName: 'plan', type: 'step_started' }),
+            event: 'workflow_state',
+            id: 'plan',
+          } as any);
+        },
+      );
+
+      await fetchSSE('/', { onMessageHandle: mockOnMessageHandle });
+
+      expect(mockOnMessageHandle).toHaveBeenCalledWith({
+        id: 'plan',
+        payload: { stepName: 'plan', type: 'step_started' },
+        type: 'workflow_state',
+      });
+    });
+
+    it('omits id when the SSE frame has none', async () => {
+      const mockOnMessageHandle = vi.fn();
+
+      (fetchEventSource as any).mockImplementationOnce(
+        (_url: string, options: FetchEventSourceInit) => {
+          options.onopen!({ clone: () => ({ ok: true, headers: new Headers() }) } as any);
+          options.onmessage!({
+            data: JSON.stringify({ nodes: [{ stepId: 'a', label: 'A' }] }),
+            event: 'workflow_state',
+            id: '',
+          } as any);
+        },
+      );
+
+      await fetchSSE('/', { onMessageHandle: mockOnMessageHandle });
+
+      expect(mockOnMessageHandle).toHaveBeenCalledWith({
+        id: undefined,
+        payload: { nodes: [{ stepId: 'a', label: 'A' }] },
+        type: 'workflow_state',
+      });
+    });
+  });
 });
