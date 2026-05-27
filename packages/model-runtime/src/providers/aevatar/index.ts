@@ -29,6 +29,13 @@ export interface LobeAevatarAIParams {
   apiKey?: string;
   baseURL?: string;
   nyxIdToken?: string;
+  /**
+   * Optional remote GAgent (Actor) identifier. When set, the aevatar server
+   * routes the chat invocation to the specific Actor instead of the
+   * scope's default agent. Sourced per-agent from the lobehub `agents`
+   * table when the row has `remoteKind === 'aevatar'`.
+   */
+  remoteAgentId?: string;
 }
 
 interface AevatarInputPart {
@@ -37,6 +44,12 @@ interface AevatarInputPart {
 }
 
 interface AevatarStreamRequest {
+  /**
+   * Targeting hint for the aevatar server: id of the remote GAgent (Actor)
+   * to dispatch this request to. Omitted when the lobehub agent has no
+   * remote binding (i.e. local agent path).
+   */
+  agentId?: string;
   inputParts?: AevatarInputPart[];
   prompt?: string;
   sessionId?: string;
@@ -82,10 +95,14 @@ const extractPromptFromPayload = (payload: ChatStreamPayload): string => {
     .join('\n');
 };
 
-const buildRequestBody = (payload: ChatStreamPayload): AevatarStreamRequest => {
+const buildRequestBody = (
+  payload: ChatStreamPayload,
+  remoteAgentId?: string,
+): AevatarStreamRequest => {
   const prompt = extractPromptFromPayload(payload).trim();
 
   return {
+    ...(remoteAgentId ? { agentId: remoteAgentId } : {}),
     inputParts: prompt ? [{ text: prompt, type: 'text' }] : undefined,
     prompt,
   };
@@ -117,18 +134,25 @@ export class LobeAevatarAI implements LobeRuntimeAI {
 
   private readonly apiKey?: string;
   private readonly nyxIdToken?: string;
+  private readonly remoteAgentId?: string;
 
-  constructor({ apiKey, baseURL = DEFAULT_BASE_URL, nyxIdToken }: LobeAevatarAIParams = {}) {
+  constructor({
+    apiKey,
+    baseURL = DEFAULT_BASE_URL,
+    nyxIdToken,
+    remoteAgentId,
+  }: LobeAevatarAIParams = {}) {
     this.apiKey = apiKey;
     this.baseURL = trimTrailingSlash(baseURL);
     this.nyxIdToken = nyxIdToken;
+    this.remoteAgentId = remoteAgentId;
   }
 
   async chat(payload: ChatStreamPayload, options?: ChatMethodOptions): Promise<Response> {
     const endpoint = resolveEndpoint(this.baseURL);
     const token = this.nyxIdToken || this.apiKey;
     const response = await fetch(endpoint, {
-      body: JSON.stringify(buildRequestBody(payload)),
+      body: JSON.stringify(buildRequestBody(payload, this.remoteAgentId)),
       headers: {
         'Accept': 'text/event-stream',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

@@ -126,4 +126,68 @@ describe('LobeAevatarAI', () => {
     );
     expect(capturedSignal?.aborted).toBe(true);
   });
+
+  it('forwards remoteAgentId from constructor into the request body (issue #4)', async () => {
+    let capturedBody: string | undefined;
+    mockFetch.mockImplementation(async (_input, init) => {
+      capturedBody = init?.body as string | undefined;
+
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode('data: {"runFinished":{"runId":"run-1"}}\n\n'),
+            );
+            controller.close();
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream; charset=utf-8' }, status: 200 },
+      );
+    });
+
+    const runtime = new LobeAevatarAI({
+      apiKey: 'nyxid-token',
+      baseURL: 'https://aevatar.example.com/api/scopes/demo',
+      remoteAgentId: 'gagent-bound-7',
+    });
+
+    await runtime.chat({
+      messages: [{ content: 'Hello', role: 'user' }],
+      model: 'aevatar-chat',
+    });
+
+    expect(capturedBody).toBeDefined();
+    const parsed = JSON.parse(capturedBody!);
+    expect(parsed.agentId).toBe('gagent-bound-7');
+    expect(parsed.prompt).toBe('Hello');
+  });
+
+  it('omits agentId from the request body when no remoteAgentId is set', async () => {
+    let capturedBody: string | undefined;
+    mockFetch.mockImplementation(async (_input, init) => {
+      capturedBody = init?.body as string | undefined;
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode('data: {"runFinished":{"runId":"run-1"}}\n\n'),
+            );
+            controller.close();
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream; charset=utf-8' }, status: 200 },
+      );
+    });
+
+    const runtime = new LobeAevatarAI({
+      apiKey: 'nyxid-token',
+      baseURL: 'https://aevatar.example.com/api/scopes/demo',
+    });
+
+    await runtime.chat({ messages: [{ content: 'Hi', role: 'user' }], model: 'aevatar-chat' });
+
+    expect(capturedBody).toBeDefined();
+    const parsed = JSON.parse(capturedBody!);
+    expect(parsed.agentId).toBeUndefined();
+  });
 });

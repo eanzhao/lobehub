@@ -395,6 +395,23 @@ export class AiAgentService {
     if (modelOverride) agentConfig.model = modelOverride;
     if (providerOverride) agentConfig.provider = providerOverride;
 
+    // Issue #4: Remote GAgent binding takes precedence over any local
+    // provider configuration. When the agent row carries
+    // `remoteKind === 'aevatar'`, the local `provider/model/systemRole` are
+    // read-only hints — the remote Actor on the aevatar server owns the
+    // runtime configuration. Force provider to `aevatar` so model-bank
+    // lookups (capabilities, baseURL fallbacks) resolve consistently;
+    // RuntimeExecutors.call_llm reads `remoteEndpoint` + `remoteAgentId`
+    // from the agentConfig metadata to plumb the binding into the runtime.
+    const remoteKindRaw = (agentConfig as { remoteKind?: string | null }).remoteKind;
+    if (remoteKindRaw === 'aevatar') {
+      agentConfig.provider = 'aevatar';
+      // Provide a deterministic model id so downstream model-bank lookups
+      // resolve; the aevatar provider ignores the model field and routes
+      // server-side via `remoteAgentId`.
+      if (!agentConfig.model) agentConfig.model = 'aevatar-chat';
+    }
+
     log(
       'execAgent: got agent config for %s (id: %s), model: %s, provider: %s',
       identifier,

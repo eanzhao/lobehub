@@ -369,7 +369,31 @@ export default {
   'newClaudeCodeAgent': 'Add Claude Code',
   'newCodexAgent': 'Add Codex',
   'newPlatformAgent': 'Add Platform Agent',
+  'newAevatarAgent': 'Connect Aevatar GAgent',
   'newGroupChat': 'Create Group',
+
+  // Aevatar GAgent connect modal (issue #4: bind topics to remote aevatar Actor)
+  'aevatarAgent.connect.title': 'Connect Aevatar GAgent',
+  'aevatarAgent.connect.endpoint': 'Aevatar Endpoint URL',
+  'aevatarAgent.connect.endpointHint':
+    'Base URL of the aevatar deployment, including the scope path. Example: https://aevatar.example/api/scopes/default',
+  'aevatarAgent.connect.endpointPlaceholder': 'https://aevatar.example/api/scopes/default',
+  'aevatarAgent.connect.agentId': 'GAgent ID',
+  'aevatarAgent.connect.agentIdHint':
+    'Identifier of the remote GAgent (Actor) on the aevatar server.',
+  'aevatarAgent.connect.agentIdPlaceholder': 'e.g. gagent-1234',
+  'aevatarAgent.connect.name': 'Display Name',
+  'aevatarAgent.connect.namePlaceholder': 'e.g. My Aevatar Helper',
+  'aevatarAgent.connect.description': 'Description',
+  'aevatarAgent.connect.descriptionPlaceholder': 'Brief description (optional)',
+  'aevatarAgent.connect.connect': 'Connect',
+  'aevatarAgent.connect.connecting': 'Connecting...',
+  'aevatarAgent.connect.cancel': 'Cancel',
+  'aevatarAgent.connect.endpointRequired': 'Please enter an aevatar endpoint URL',
+  'aevatarAgent.connect.agentIdRequired': 'Please enter the remote GAgent id',
+  'aevatarAgent.connect.invalidUrl': 'Endpoint must be an absolute http(s) URL.',
+  'aevatarAgent.connect.helper':
+    "When connected, all messages sent in this agent's topics are routed to the remote GAgent. The local model / system prompt fields become read-only hints.",
 
   // Platform agent: per-platform descriptions shown in step 0 of the creation modal
   'platformAgent.create.desc.openclaw': 'Connect to OpenClaw running on one of your devices',

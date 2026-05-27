@@ -105,6 +105,11 @@ export const CreateAgentSchema = z.object({
   params: z.record(z.unknown()).optional(),
   plugins: z.array(z.string()).optional(),
   provider: z.string().nullable().optional(),
+  // Remote GAgent binding fields (issue #4). All nullable / optional so
+  // existing local-agent creates are unaffected.
+  remoteAgentId: z.string().nullable().optional(),
+  remoteEndpoint: z.string().nullable().optional(),
+  remoteKind: z.literal('aevatar').nullable().optional(),
   sessionGroupId: z.string().nullable().optional(),
   systemRole: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
@@ -135,6 +140,23 @@ export interface AgentItem {
   params?: any;
   plugins?: string[];
   provider?: string | null;
+  /**
+   * Identifier of the remote GAgent (Actor) when this agent row is a remote
+   * binding. Meaningful only when `remoteKind` is set. See issue #4.
+   */
+  remoteAgentId?: string | null;
+  /**
+   * Base URL of the remote aevatar deployment that hosts the bound GAgent
+   * (e.g. `https://aevatar.example/api/scopes/default`). Per-agent because
+   * users may bind to different aevatar deployments.
+   */
+  remoteEndpoint?: string | null;
+  /**
+   * Tags this agent as a remote-bound binding. When `'aevatar'`, the local
+   * `systemRole / chatConfig / model / provider` columns are read-only hints
+   * and the runtime is owned by the remote Actor.
+   */
+  remoteKind?: 'aevatar' | null;
   /** Session group ID for direct grouping */
   sessionGroupId?: string | null;
   slug?: string | null;
