@@ -1,5 +1,24 @@
 import type { MessageToolCallChunk } from '../../types';
 
+/**
+ * Tool-call chunk emitted by the aevatar codec.
+ *
+ * Extends the standard {@link MessageToolCallChunk} with two extra fields so
+ * downstream consumers (StreamingHandler -> internal_transformToolCalls ->
+ * renderer / agent-runtime) can distinguish aevatar GAgent tool calls (already
+ * executed server-side) from regular client-dispatched tool calls.
+ *
+ *  - `source: 'aevatar'` — tags the origin so renderers/selectors can branch.
+ *  - `executor: 'server'` — declares the dispatch target; the client guard in
+ *    agent-runtime uses this to skip a redundant re-execution.
+ */
+export type AevatarToolCallChunk = MessageToolCallChunk & {
+  /** Dispatch target for this tool call. Aevatar tools are server-executed. */
+  executor: 'server';
+  /** Origin tag. Always `'aevatar'` for chunks produced by this codec. */
+  source: 'aevatar';
+};
+
 /** Protobuf Any value emitted by aevatar's camelCase JSON stream. */
 export interface AguiAny {
   '@type'?: string;
@@ -139,7 +158,7 @@ export type AguiEventEnvelope =
 /** LobeHub stream event emitted by the aevatar stream codec. */
 export type LobehubStreamEvent =
   | { data: string; event: 'text'; id?: string }
-  | { data: MessageToolCallChunk[]; event: 'tool_calls'; id?: string }
+  | { data: AevatarToolCallChunk[]; event: 'tool_calls'; id?: string }
   | {
       data: { message: string; phase?: string; reason?: string; type: string };
       event: 'error';

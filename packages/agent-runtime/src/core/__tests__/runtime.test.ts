@@ -338,6 +338,69 @@ describe('AgentRuntime', () => {
           'Tool not found: unknown_tool',
         );
       });
+
+      // Issue #3: server-executed tool calls (e.g. aevatar GAgent) must NOT be
+      // dispatched to a local handler. The guard returns early so the client
+      // only renders the result that already arrived in the stream.
+      it('should skip dispatch when executor is "server"', async () => {
+        const agent = new MockAgent();
+        const calculator = vi.fn().mockResolvedValue({ result: 42 });
+        agent.tools = { calculator };
+
+        const runtime = new AgentRuntime(agent);
+        const state = AgentRuntime.createInitialState({ operationId: 'test-session' });
+
+        const toolCall: ChatToolPayload = {
+          apiName: 'calculator',
+          arguments: '{"expression": "2+2"}',
+          executor: 'server',
+          id: 'call_server_1',
+          identifier: 'calculator',
+          source: 'aevatar',
+          type: 'default' as any,
+        };
+
+        const result = await runtime.approveToolCall(state, toolCall);
+
+        // The local handler must not be invoked.
+        expect(calculator).not.toHaveBeenCalled();
+        // No tool_result event is emitted; the result already arrived via the
+        // upstream stream and will be rendered separately.
+        expect(result.events.some((e) => e.type === 'tool_result')).toBe(false);
+        // No `role: 'tool'` message is appended by the guard path.
+        expect(result.newState.messages.filter((m) => m.role === 'tool')).toHaveLength(0);
+      });
+
+      // Sanity check the client (default) dispatch path is unaffected by the
+      // guard: when executor is omitted (or explicitly 'client') the local
+      // handler still runs exactly as before.
+      it('should dispatch to local handler when executor is not "server"', async () => {
+        const agent = new MockAgent();
+        const calculator = vi.fn().mockResolvedValue({ result: 42 });
+        agent.tools = { calculator };
+
+        const runtime = new AgentRuntime(agent);
+        const state = AgentRuntime.createInitialState({ operationId: 'test-session' });
+
+        const toolCall: ChatToolPayload = {
+          apiName: 'calculator',
+          arguments: '{"expression": "2+2"}',
+          executor: 'client',
+          id: 'call_client_1',
+          identifier: 'calculator',
+          type: 'default' as any,
+        };
+
+        const result = await runtime.approveToolCall(state, toolCall);
+
+        expect(calculator).toHaveBeenCalledWith({ expression: '2+2' });
+        expect(result.events).toHaveLength(1);
+        expect(result.events[0]).toMatchObject({
+          id: 'call_client_1',
+          result: { result: 42 },
+          type: 'tool_result',
+        });
+      });
     });
 
     describe('human interaction executors', () => {

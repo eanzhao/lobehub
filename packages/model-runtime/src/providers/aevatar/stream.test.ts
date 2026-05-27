@@ -169,6 +169,54 @@ describe('AevatarStream', () => {
     });
   });
 
+  // Issue #3: every aevatar-emitted tool_calls chunk must carry the
+  // `source: 'aevatar'` and `executor: 'server'` tags so downstream
+  // consumers (StreamingHandler, agent-runtime, renderer) can recognise
+  // GAgent-origin tool calls and skip client-side re-execution.
+  it('emits source="aevatar" and executor="server" on toolCallStart chunks', async () => {
+    const upstream = streamFromFrames([
+      sseFrame({ toolCallStart: { toolCallId: 'call-1', toolName: 'foo' } }),
+    ]);
+
+    const chunks = await readAll(AevatarStream(upstream));
+    const frames = parseLobehubFrames(chunks);
+
+    const toolCallFrames = frames.filter((f) => f.event === 'tool_calls');
+    expect(toolCallFrames).toHaveLength(1);
+
+    const data = toolCallFrames[0].data as Array<{
+      executor?: string;
+      function?: { name?: string };
+      id?: string;
+      source?: string;
+    }>;
+    expect(data[0]).toMatchObject({
+      executor: 'server',
+      id: 'call-1',
+      source: 'aevatar',
+    });
+  });
+
+  it('emits source="aevatar" and executor="server" on toolCallEnd chunks', async () => {
+    const upstream = streamFromFrames([
+      sseFrame({ toolCallStart: { toolCallId: 'call-1', toolName: 'foo' } }),
+      sseFrame({ toolCallEnd: { result: '42', toolCallId: 'call-1' } }),
+    ]);
+
+    const chunks = await readAll(AevatarStream(upstream));
+    const frames = parseLobehubFrames(chunks);
+
+    const toolCallFrames = frames.filter((f) => f.event === 'tool_calls');
+    expect(toolCallFrames).toHaveLength(2);
+
+    // Both start and end chunks must carry the tags.
+    for (const frame of toolCallFrames) {
+      const data = frame.data as Array<{ executor?: string; source?: string }>;
+      expect(data[0]?.source).toBe('aevatar');
+      expect(data[0]?.executor).toBe('server');
+    }
+  });
+
   it('runError emits an error event with message and type', async () => {
     const onError = vi.fn();
     const upstream = streamFromFrames([

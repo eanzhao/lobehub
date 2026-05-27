@@ -910,6 +910,140 @@ describe('ChatPluginAction', () => {
       );
       expect(repairedArgs.instruction).toBe('You have access to 10 batch analysis files');
     });
+
+    // Field-preservation contract for the codec -> StreamingHandler -> transform
+    // -> agent-runtime guard pipeline (PR #12 / issue #3 round-1 review fix).
+    // The aevatar codec stamps `source: 'aevatar'` and `executor: 'server'` on
+    // streamed tool-call chunks. If those tags don't survive
+    // `internal_transformToolCalls`, the agent-runtime guard at
+    // packages/agent-runtime/src/core/runtime.ts:522-529 never fires and the
+    // client would re-execute a server-completed tool.
+    it('should preserve `source` and `executor` tags from aevatar-shaped chunks', () => {
+      // Mimic the runtime shape of an AevatarToolCallChunk after
+      // StreamingHandler aggregates the chunks into a MessageToolCall: the
+      // codec-stamped fields ride along on the object even though the formal
+      // MessageToolCall type doesn't declare them.
+      const toolCalls = [
+        {
+          id: 'tool-aevatar-1',
+          function: {
+            name: ['aevatar-tool', 'doThing', 'default'].join(PLUGIN_SCHEMA_SEPARATOR),
+            arguments: '{}',
+          },
+          type: 'function',
+          // Extra tags stamped by the aevatar codec
+          source: 'aevatar',
+          executor: 'server',
+        },
+      ] as unknown as MessageToolCall[];
+
+      const { result } = renderHook(() => useChatStore());
+
+      const transformed = result.current.internal_transformToolCalls(toolCalls);
+
+      expect(transformed).toHaveLength(1);
+      expect(transformed[0].id).toBe('tool-aevatar-1');
+      // Both codec-stamped fields must survive
+      expect(transformed[0].source).toBe('aevatar');
+      expect(transformed[0].executor).toBe('server');
+    });
+
+    it('should fall back to local sourceMap when chunk has no source tag', () => {
+      // No `source`/`executor` on the chunk — fallback should pull from the
+      // local sourceMap (builtin/mcp/klavis/lobehubSkill) the way the existing
+      // implementation does.
+      const toolCalls: MessageToolCall[] = [
+        {
+          id: 'tool-fallback-1',
+          function: {
+            name: ['plugin-fallback', 'apiX', 'default'].join(PLUGIN_SCHEMA_SEPARATOR),
+            arguments: '{}',
+          },
+          type: 'function',
+        },
+      ];
+
+      act(() => {
+        useToolStore.setState({
+          installedPlugins: [
+            {
+              type: 'plugin',
+              identifier: 'plugin-fallback',
+              manifest: {
+                identifier: 'plugin-fallback',
+                api: [
+                  {
+                    name: 'apiX',
+                    parameters: { type: 'object', properties: {} },
+                    description: 'fallback test',
+                  },
+                ],
+                type: 'default',
+              } as any,
+            },
+          ],
+        });
+      });
+
+      const { result } = renderHook(() => useChatStore());
+
+      const transformed = result.current.internal_transformToolCalls(toolCalls);
+
+      expect(transformed).toHaveLength(1);
+      // Installed plugins are mapped to 'mcp' by internal_transformToolCalls.
+      expect(transformed[0].source).toBe('mcp');
+      // executor was never on the chunk — must remain absent
+      expect(transformed[0].executor).toBeUndefined();
+    });
+
+    it('should let chunk-stamped source override local sourceMap', () => {
+      // Edge case: an aevatar chunk for an identifier ALSO present in the
+      // local installed-plugins map. The codec stamp must win — otherwise the
+      // double-execution guard would lose the 'aevatar' tag and the executor
+      // tag would not be propagated.
+      const toolCalls = [
+        {
+          id: 'tool-conflict-1',
+          function: {
+            name: ['plugin-shared', 'apiY', 'default'].join(PLUGIN_SCHEMA_SEPARATOR),
+            arguments: '{}',
+          },
+          type: 'function',
+          source: 'aevatar',
+          executor: 'server',
+        },
+      ] as unknown as MessageToolCall[];
+
+      act(() => {
+        useToolStore.setState({
+          installedPlugins: [
+            {
+              type: 'plugin',
+              identifier: 'plugin-shared',
+              manifest: {
+                identifier: 'plugin-shared',
+                api: [
+                  {
+                    name: 'apiY',
+                    parameters: { type: 'object', properties: {} },
+                    description: 'conflict test',
+                  },
+                ],
+                type: 'default',
+              } as any,
+            },
+          ],
+        });
+      });
+
+      const { result } = renderHook(() => useChatStore());
+
+      const transformed = result.current.internal_transformToolCalls(toolCalls);
+
+      expect(transformed).toHaveLength(1);
+      expect(transformed[0].source).toBe('aevatar');
+      expect(transformed[0].executor).toBe('server');
+    });
   });
 
   describe('internal_updatePluginError', () => {

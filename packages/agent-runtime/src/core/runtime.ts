@@ -519,6 +519,15 @@ export class AgentRuntime {
       const toolArgs = toolCall.arguments;
       const toolId = toolCall.id;
 
+      // Server-executed tool calls (e.g. aevatar GAgent) have already produced
+      // their result upstream. The client must NOT re-invoke a local handler;
+      // it should only render the result that arrives alongside the call.
+      // Returning early with no events keeps the conversation flow intact
+      // while preventing duplicate execution.
+      if (toolCall.executor === 'server') {
+        return { events, newState };
+      }
+
       const handler = tools[toolName];
       if (!handler) throw new Error(`Tool not found: ${toolName}`);
 
