@@ -5,12 +5,13 @@ import debug from 'debug';
 import { type NextRequest } from 'next/server';
 
 import { auth } from '@/auth';
+import { extractNyxIdAccessTokenFromCookieHeader } from '@/business/server/nyxid-auth';
 import { getServerDB } from '@/database/core/db-adaptor';
 import { ApiKeyModel } from '@/database/models/apiKey';
 import { authEnv, LOBE_CHAT_OIDC_AUTH_HEADER } from '@/envs/auth';
 import { extractTraceContext } from '@/libs/observability/traceparent';
 import { assertOIDCUserActive, isOIDCUserInactiveError } from '@/libs/oidc-provider/access-control';
-import { validateOIDCJWT } from '@/libs/oidc-provider/jwt';
+import { ensureOIDCUserRecord, isStatelessOIDCAuthEnabled, validateOIDCJWT } from '@/libs/oidc-provider/jwt';
 import { isApiKeyExpired, validateApiKeyFormat } from '@/utils/apiKey';
 
 // Create context logger namespace
@@ -169,9 +170,11 @@ export const createLambdaContext = async (request: NextRequest): Promise<LambdaC
   let oidcAuth;
 
   // Prioritize checking for OIDC authentication (both standard Authorization and custom Oidc-Auth headers)
-  if (authEnv.ENABLE_OIDC) {
+  if (isStatelessOIDCAuthEnabled()) {
     log('OIDC enabled, attempting OIDC authentication');
-    const oidcAuthToken = request.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER);
+    const oidcAuthToken =
+      request.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER) ||
+      extractNyxIdAccessTokenFromCookieHeader(cookieHeader);
     log('Oidc-Auth header: %s', oidcAuthToken ? 'exists' : 'not found');
 
     try {
@@ -187,6 +190,7 @@ export const createLambdaContext = async (request: NextRequest): Promise<LambdaC
         };
         userId = tokenInfo.userId;
         const db = await getServerDB();
+        await ensureOIDCUserRecord(db, tokenInfo);
         await assertOIDCUserActive(db, userId);
         log('OIDC authentication successful, userId: %s', userId);
 

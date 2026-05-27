@@ -16,16 +16,20 @@ interface TestHonoEnv {
 const {
   mockAssertOIDCUserActive,
   mockAuthEnv,
+  mockEnsureOIDCUserRecord,
   mockGetServerDB,
   mockExtractBearerToken,
+  mockIsStatelessOIDCAuthEnabled,
   mockServerDB,
   mockValidateApiKeyFormat,
   mockValidateOIDCJWT,
 } = vi.hoisted(() => ({
   mockAssertOIDCUserActive: vi.fn(),
   mockAuthEnv: { ENABLE_OIDC: true },
+  mockEnsureOIDCUserRecord: vi.fn(),
   mockExtractBearerToken: vi.fn(),
   mockGetServerDB: vi.fn(),
+  mockIsStatelessOIDCAuthEnabled: vi.fn(),
   mockServerDB: {},
   mockValidateApiKeyFormat: vi.fn(),
   mockValidateOIDCJWT: vi.fn(),
@@ -48,6 +52,8 @@ vi.mock('@/libs/oidc-provider/access-control', () => ({
 }));
 
 vi.mock('@/libs/oidc-provider/jwt', () => ({
+  ensureOIDCUserRecord: mockEnsureOIDCUserRecord,
+  isStatelessOIDCAuthEnabled: mockIsStatelessOIDCAuthEnabled,
   validateOIDCJWT: mockValidateOIDCJWT,
 }));
 
@@ -85,7 +91,9 @@ describe('OpenAPI auth middleware', () => {
     mockAuthEnv.ENABLE_OIDC = true;
     mockExtractBearerToken.mockReturnValue('oidc-token');
     mockGetServerDB.mockResolvedValue(mockServerDB);
+    mockIsStatelessOIDCAuthEnabled.mockReturnValue(true);
     mockValidateApiKeyFormat.mockReturnValue(false);
+    mockEnsureOIDCUserRecord.mockResolvedValue(undefined);
     mockValidateOIDCJWT.mockResolvedValue({
       tokenData: { sub: 'oidc-user' },
       userId: 'oidc-user',
@@ -106,6 +114,7 @@ describe('OpenAPI auth middleware', () => {
     });
     expect(response.status).toBe(200);
     expect(mockValidateOIDCJWT).toHaveBeenCalledWith('oidc-token');
+    expect(mockEnsureOIDCUserRecord).toHaveBeenCalledWith(mockServerDB, expect.any(Object));
     expect(mockAssertOIDCUserActive).toHaveBeenCalledWith(mockServerDB, 'oidc-user');
   });
 
@@ -118,6 +127,7 @@ describe('OpenAPI auth middleware', () => {
       tokenData: { sub: 'banned-user' },
       userId: 'banned-user',
     });
+    mockEnsureOIDCUserRecord.mockResolvedValueOnce(undefined);
     mockAssertOIDCUserActive.mockRejectedValueOnce(inactiveError);
 
     const response = await app.request('/protected', {

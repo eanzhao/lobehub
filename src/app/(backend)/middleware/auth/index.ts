@@ -5,12 +5,13 @@ import type { ClientSecretPayload } from '@lobechat/types';
 import { ChatErrorType } from '@lobechat/types';
 
 import { auth } from '@/auth';
+import { extractNyxIdAccessTokenFromCookieHeader } from '@/business/server/nyxid-auth';
 import { getServerDB } from '@/database/core/db-adaptor';
 import type { LobeChatDatabase } from '@/database/type';
 import { LOBE_CHAT_OIDC_AUTH_HEADER } from '@/envs/auth';
 import { extractTraceContext, injectActiveTraceHeaders } from '@/libs/observability/traceparent';
 import { assertOIDCUserActive } from '@/libs/oidc-provider/access-control';
-import { validateOIDCJWT } from '@/libs/oidc-provider/jwt';
+import { ensureOIDCUserRecord, validateOIDCJWT } from '@/libs/oidc-provider/jwt';
 import { createErrorResponse } from '@/utils/errorResponse';
 
 type RequestOptions = { params: Promise<{ provider?: string }> };
@@ -85,10 +86,13 @@ export const checkAuth =
 
     try {
       // OIDC authentication (CLI)
-      const oidcAuthorization = req.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER);
+      const oidcAuthorization =
+        req.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER) ||
+        extractNyxIdAccessTokenFromCookieHeader(req.headers.get('cookie'));
       if (oidcAuthorization) {
         const oidc = await validateOIDCJWT(oidcAuthorization);
         userId = oidc.userId;
+        await ensureOIDCUserRecord(serverDB, oidc);
         await assertOIDCUserActive(serverDB, userId);
       } else {
         // Better Auth session authentication (web)
@@ -104,7 +108,9 @@ export const checkAuth =
       }
     } catch (e) {
       const params = await options.params;
-      const oidcAuthorization = req.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER);
+      const oidcAuthorization =
+        req.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER) ||
+        extractNyxIdAccessTokenFromCookieHeader(req.headers.get('cookie'));
 
       // Only log OIDC auth failures — better-auth session failures are a common
       // baseline (unauthenticated browser hits) and would otherwise flood logs.

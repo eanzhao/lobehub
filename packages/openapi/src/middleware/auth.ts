@@ -2,11 +2,12 @@ import debug from 'debug';
 import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
+import { extractNyxIdAccessTokenFromCookieHeader } from '@/business/server/nyxid-auth';
 import { getServerDB } from '@/database/core/db-adaptor';
 import { ApiKeyModel } from '@/database/models/apiKey';
 import { authEnv } from '@/envs/auth';
 import { assertOIDCUserActive } from '@/libs/oidc-provider/access-control';
-import { validateOIDCJWT } from '@/libs/oidc-provider/jwt';
+import { ensureOIDCUserRecord, isStatelessOIDCAuthEnabled, validateOIDCJWT } from '@/libs/oidc-provider/jwt';
 import { validateApiKeyFormat } from '@/utils/apiKey';
 import { extractBearerToken } from '@/utils/server/auth';
 
@@ -62,7 +63,9 @@ export const userAuthMiddleware = async (c: Context, next: Next) => {
 
   // Get Authorization header (standard Bearer token)
   const authorizationHeader = c.req.header('Authorization');
-  const bearerToken = extractBearerToken(authorizationHeader);
+  const bearerToken =
+    extractBearerToken(authorizationHeader) ||
+    extractNyxIdAccessTokenFromCookieHeader(c.req.header('cookie'));
 
   let userId: string | null = null;
   let authType: string | null = null;
@@ -168,7 +171,7 @@ export const userAuthMiddleware = async (c: Context, next: Next) => {
           log('API Key authentication failed: %O', error);
         }
       }
-    } else if (authEnv.ENABLE_OIDC) {
+    } else if (isStatelessOIDCAuthEnabled()) {
       // Try OIDC authentication
       log('Bearer token does not match API Key format, attempting OIDC authentication');
 
@@ -176,6 +179,7 @@ export const userAuthMiddleware = async (c: Context, next: Next) => {
         // Use direct JWT validation instead of OIDCService
         const tokenInfo = await validateOIDCJWT(bearerToken);
         const db = await getServerDB();
+        await ensureOIDCUserRecord(db, tokenInfo);
         await assertOIDCUserActive(db, tokenInfo.userId);
 
         userId = tokenInfo.userId;

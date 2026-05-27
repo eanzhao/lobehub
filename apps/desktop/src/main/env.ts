@@ -52,6 +52,8 @@ const envNumber = (defaultValue: number) =>
 
 const getRuntimeEnv = () => ({
   ...process.env,
+  AUTH_GENERIC_OIDC_ID: process.env.AUTH_GENERIC_OIDC_ID,
+  AUTH_GENERIC_OIDC_ISSUER: process.env.AUTH_GENERIC_OIDC_ISSUER,
   DESKTOP_EXTERNAL_NAVIGATION_HOSTS: process.env.DESKTOP_EXTERNAL_NAVIGATION_HOSTS,
   UPDATE_CHANNEL: process.env.UPDATE_CHANNEL,
   UPDATE_SERVER_URL: process.env.UPDATE_SERVER_URL,
@@ -73,6 +75,9 @@ export const getDesktopEnv = memoize(() =>
     runtimeEnv: getRuntimeEnv(),
     server: {
       DEBUG_VERBOSE: envBoolean(false),
+
+      AUTH_GENERIC_OIDC_ID: z.string().optional(),
+      AUTH_GENERIC_OIDC_ISSUER: z.string().optional(),
 
       // escape hatch: allow testing static renderer in dev via env
       DESKTOP_RENDERER_STATIC: envBoolean(false),

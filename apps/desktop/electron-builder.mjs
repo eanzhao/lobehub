@@ -91,6 +91,7 @@ const getProtocolScheme = () => {
 };
 
 const protocolScheme = getProtocolScheme();
+const authProtocolScheme = 'aevatar';
 
 // Determine icon file based on version type
 const getIconFileName = () => {
@@ -276,6 +277,10 @@ const config = {
           CFBundleURLName: 'LobeHub Protocol',
           CFBundleURLSchemes: [protocolScheme],
         },
+        {
+          CFBundleURLName: 'Aevatar Auth Protocol',
+          CFBundleURLSchemes: [authProtocolScheme],
+        },
       ],
       NSAppleEventsUsageDescription:
         'Application needs to control System Settings to help you grant Full Disk Access automatically.',
@@ -313,6 +318,10 @@ const config = {
     {
       name: 'LobeHub Protocol',
       schemes: [protocolScheme],
+    },
+    {
+      name: 'Aevatar Auth Protocol',
+      schemes: [authProtocolScheme],
     },
   ],
   publish: getPublishConfig(),

@@ -3,7 +3,7 @@ import { ChatErrorType } from '@lobechat/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { assertOIDCUserActive } from '@/libs/oidc-provider/access-control';
-import { validateOIDCJWT } from '@/libs/oidc-provider/jwt';
+import { ensureOIDCUserRecord, validateOIDCJWT } from '@/libs/oidc-provider/jwt';
 import { createErrorResponse } from '@/utils/errorResponse';
 
 import { checkAuth, type RequestHandler } from './index';
@@ -50,6 +50,7 @@ vi.mock('@lobechat/observability-otel/api', () => ({
 }));
 
 vi.mock('@/libs/oidc-provider/jwt', () => ({
+  ensureOIDCUserRecord: vi.fn().mockResolvedValue(undefined),
   validateOIDCJWT: vi.fn(),
 }));
 
@@ -83,11 +84,13 @@ describe('checkAuth', () => {
       tokenData: { sub: 'oidc-user' },
       userId: 'oidc-user',
     } as Awaited<ReturnType<typeof validateOIDCJWT>>);
+    vi.mocked(ensureOIDCUserRecord).mockResolvedValueOnce(undefined);
     vi.mocked(assertOIDCUserActive).mockResolvedValueOnce(undefined);
     vi.mocked(mockHandler).mockResolvedValueOnce(new Response('ok'));
 
     await checkAuth(mockHandler)(oidcRequest, mockOptions);
 
+    expect(ensureOIDCUserRecord).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));
     expect(assertOIDCUserActive).toHaveBeenCalledWith(expect.any(Object), 'oidc-user');
     expect(mockHandler).toHaveBeenCalledWith(
       expect.any(Request),
@@ -109,6 +112,7 @@ describe('checkAuth', () => {
       tokenData: { sub: 'banned-user' },
       userId: 'banned-user',
     } as Awaited<ReturnType<typeof validateOIDCJWT>>);
+    vi.mocked(ensureOIDCUserRecord).mockResolvedValueOnce(undefined);
     vi.mocked(assertOIDCUserActive).mockRejectedValueOnce(inactiveError);
 
     await checkAuth(mockHandler)(oidcRequest, mockOptions);

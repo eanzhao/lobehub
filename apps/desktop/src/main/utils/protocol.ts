@@ -3,6 +3,7 @@ import { app } from 'electron';
 import type { McpSchema, ProtocolUrlParsed } from '../types/protocol';
 
 export type AppChannel = 'stable' | 'beta' | 'nightly';
+export const AEVATAR_PROTOCOL_SCHEME = 'aevatar';
 
 export const getProtocolScheme = (): string => {
   // In Electron environment, version can be determined in multiple ways
@@ -20,6 +21,10 @@ export const getProtocolScheme = (): string => {
   if (appPath?.includes('dev')) return 'lobehub-dev';
 
   return 'lobehub';
+};
+
+export const getSupportedProtocolSchemes = (): string[] => {
+  return [getProtocolScheme(), AEVATAR_PROTOCOL_SCHEME];
 };
 
 export const getVersionInfo = (): { channel: AppChannel; protocolScheme: string } => {
@@ -98,9 +103,30 @@ export const parseProtocolUrl = (url: string): ProtocolUrlParsed | null => {
     const parsedUrl = new URL(url);
 
     // Support multiple protocol schemes
-    const validProtocols = ['lobehub:', 'lobehub-dev:', 'lobehub-nightly:', 'lobehub-beta:'];
+    const validProtocols = getSupportedProtocolSchemes().map((scheme) => `${scheme}:`);
     if (!validProtocols.includes(parsedUrl.protocol)) {
       return null;
+    }
+
+    // aevatar://oauth-callback?code=... uses the hostname as the action directly,
+    // while the existing lobehub://plugin/install shape uses hostname + pathname.
+    if (parsedUrl.protocol === `${AEVATAR_PROTOCOL_SCHEME}:`) {
+      const action = parsedUrl.hostname;
+      if (!action) return null;
+
+      const params: Record<string, string> = {};
+      const searchParams = new URLSearchParams(parsedUrl.search);
+
+      for (const [key, value] of searchParams.entries()) {
+        params[key] = value;
+      }
+
+      return {
+        action,
+        originalUrl: url,
+        params,
+        urlType: 'auth',
+      };
     }
 
     // For custom protocols, after URL parsing:

@@ -2,9 +2,10 @@ import { act } from '@testing-library/react';
 import { ModelProvider } from 'model-bank';
 import { describe, expect, it, vi } from 'vitest';
 
+import { useNyxIdAuthStore } from '@/store/auth/nyxid-slice';
 import { useUserStore } from '@/store/user';
 
-import { getProviderAuthPayload } from '../_auth';
+import { createHeaderWithAuth, getProviderAuthPayload } from '../_auth';
 
 // Mock data for different providers
 const mockZhiPuAPIKey = 'zhipu-api-key';
@@ -182,5 +183,15 @@ describe('getProviderAuthPayload', () => {
   it('should return an empty object or throw an error for an unknown provider', () => {
     const payload = getProviderAuthPayload('UnknownProvider', {});
     expect(payload).toEqual({});
+  });
+
+  it('injects bearer auth for aevatar provider when NyxID token exists', async () => {
+    act(() => {
+      useNyxIdAuthStore.getState().setNyxIdAuthenticated({ token: 'nyxid-token' });
+    });
+
+    await expect(createHeaderWithAuth({ provider: 'aevatar' })).resolves.toEqual({
+      Authorization: 'Bearer nyxid-token',
+    });
   });
 });
