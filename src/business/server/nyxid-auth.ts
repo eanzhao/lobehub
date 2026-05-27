@@ -1,9 +1,11 @@
-import { parse } from 'cookie';
+import { parse, serialize } from 'cookie';
 
 import { authEnv } from '@/envs/auth';
 
 const DEFAULT_SCOPE = 'openid profile email offline_access';
 const OPENID_DISCOVERY_PATH = '/.well-known/openid-configuration';
+const NYXID_REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
+const NYXID_REFRESH_WINDOW_MS = 60 * 1000;
 
 /**
  * NyxID OAuth client configuration resolved from server env.
@@ -63,6 +65,15 @@ export interface ExchangeNyxIdCodeParams {
  */
 export interface RefreshNyxIdTokenParams {
   refreshToken: string;
+}
+
+export interface NyxIdCookieOptions {
+  secure: boolean;
+}
+
+export interface RefreshedNyxIdSession {
+  setCookieHeaders: string[];
+  tokenResponse: NyxIdTokenResponse;
 }
 
 type FetchLike = typeof fetch;
@@ -281,6 +292,8 @@ export const nyxIdCookieNames = {
 
 export const nyxIdDefaultScope = DEFAULT_SCOPE;
 
+export const nyxIdRefreshCookieMaxAge = NYXID_REFRESH_COOKIE_MAX_AGE;
+
 export const extractNyxIdAccessTokenFromCookieHeader = (
   cookieHeader?: string | null,
 ): string | undefined => {
@@ -290,4 +303,90 @@ export const extractNyxIdAccessTokenFromCookieHeader = (
   const accessToken = cookies[nyxIdCookieNames.accessToken];
 
   return typeof accessToken === 'string' && accessToken ? accessToken : undefined;
+};
+
+export const parseNyxIdCookies = (cookieHeader?: string | null) => {
+  const cookies = cookieHeader ? parse(cookieHeader) : {};
+
+  return {
+    accessToken:
+      typeof cookies[nyxIdCookieNames.accessToken] === 'string' &&
+      cookies[nyxIdCookieNames.accessToken]
+        ? cookies[nyxIdCookieNames.accessToken]
+        : undefined,
+    expiresAt: Number(cookies[nyxIdCookieNames.expiresAt]) || undefined,
+    refreshToken:
+      typeof cookies[nyxIdCookieNames.refreshToken] === 'string' &&
+      cookies[nyxIdCookieNames.refreshToken]
+        ? cookies[nyxIdCookieNames.refreshToken]
+        : undefined,
+    scope:
+      typeof cookies[nyxIdCookieNames.scope] === 'string' && cookies[nyxIdCookieNames.scope]
+        ? cookies[nyxIdCookieNames.scope]
+        : undefined,
+  };
+};
+
+export const createNyxIdSessionCookieHeaders = (
+  tokenResponse: NyxIdTokenResponse,
+  options: NyxIdCookieOptions,
+): string[] => {
+  const expiresAt = Date.now() + tokenResponse.expiresIn * 1000;
+  const cookieOptions = {
+    httpOnly: true,
+    path: '/',
+    sameSite: 'lax' as const,
+    secure: options.secure,
+  };
+
+  const headers = [
+    serialize(nyxIdCookieNames.accessToken, tokenResponse.accessToken, {
+      ...cookieOptions,
+      maxAge: tokenResponse.expiresIn,
+    }),
+    serialize(nyxIdCookieNames.expiresAt, String(expiresAt), {
+      ...cookieOptions,
+      maxAge: tokenResponse.expiresIn,
+    }),
+    serialize(nyxIdCookieNames.scope, tokenResponse.scope ?? '', {
+      ...cookieOptions,
+      maxAge: tokenResponse.expiresIn,
+    }),
+  ];
+
+  if (tokenResponse.refreshToken) {
+    headers.push(
+      serialize(nyxIdCookieNames.refreshToken, tokenResponse.refreshToken, {
+        ...cookieOptions,
+        maxAge: NYXID_REFRESH_COOKIE_MAX_AGE,
+      }),
+    );
+  }
+
+  return headers;
+};
+
+export const isNyxIdAccessTokenExpired = (expiresAt?: number): boolean => {
+  if (!expiresAt) return false;
+
+  return expiresAt <= Date.now() + NYXID_REFRESH_WINDOW_MS;
+};
+
+export const refreshNyxIdSessionFromCookies = async (
+  cookieHeader: string | null | undefined,
+  options: NyxIdCookieOptions,
+  fetcher?: FetchLike,
+): Promise<RefreshedNyxIdSession | undefined> => {
+  const { accessToken, expiresAt, refreshToken } = parseNyxIdCookies(cookieHeader);
+
+  if (!accessToken || !refreshToken || !isNyxIdAccessTokenExpired(expiresAt)) {
+    return;
+  }
+
+  const tokenResponse = await refreshNyxIdAccessToken({ refreshToken }, fetcher);
+
+  return {
+    setCookieHeaders: createNyxIdSessionCookieHeaders(tokenResponse, options),
+    tokenResponse,
+  };
 };

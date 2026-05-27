@@ -11,6 +11,7 @@ const {
   mockFindByKey,
   mockGetSession,
   mockIsOIDCUserInactiveError,
+  mockRefreshNyxIdSessionFromCookies,
   mockUpdateLastUsed,
   mockValidateOIDCJWT,
 } = vi.hoisted(() => ({
@@ -19,6 +20,7 @@ const {
   mockFindByKey: vi.fn(),
   mockGetSession: vi.fn(),
   mockIsOIDCUserInactiveError: vi.fn(),
+  mockRefreshNyxIdSessionFromCookies: vi.fn(),
   mockUpdateLastUsed: vi.fn(),
   mockValidateOIDCJWT: vi.fn(),
 }));
@@ -59,7 +61,14 @@ vi.mock('@/libs/observability/traceparent', () => ({
 }));
 
 vi.mock('@/libs/oidc-provider/jwt', () => ({
+  ensureOIDCUserRecord: vi.fn().mockResolvedValue(undefined),
+  isStatelessOIDCAuthEnabled: vi.fn(() => true),
   validateOIDCJWT: mockValidateOIDCJWT,
+}));
+
+vi.mock('@/business/server/nyxid-auth', () => ({
+  extractNyxIdAccessTokenFromCookieHeader: vi.fn(),
+  refreshNyxIdSessionFromCookies: mockRefreshNyxIdSessionFromCookies,
 }));
 
 vi.mock('@/libs/oidc-provider/access-control', () => ({
@@ -171,6 +180,7 @@ describe('createLambdaContext', () => {
     mockGetSession.mockResolvedValue({ user: { id: 'session-user' } });
     mockAssertOIDCUserActive.mockResolvedValue(undefined);
     mockIsOIDCUserInactiveError.mockReturnValue(false);
+    mockRefreshNyxIdSessionFromCookies.mockResolvedValue(undefined);
     mockValidateOIDCJWT.mockResolvedValue({
       tokenData: { sub: 'oidc-user' },
       userId: 'oidc-user',
@@ -245,6 +255,23 @@ describe('createLambdaContext', () => {
     expect(context.oidcAuth?.sub).toBe('oidc-user');
     expect(mockAssertOIDCUserActive).toHaveBeenCalledWith(expect.any(Object), 'oidc-user');
     expect(mockGetSession).not.toHaveBeenCalled();
+  });
+
+  it('should refresh expired NyxID cookie auth and expose Set-Cookie response headers', async () => {
+    mockRefreshNyxIdSessionFromCookies.mockResolvedValueOnce({
+      setCookieHeaders: ['nyxid_access_token=fresh; Path=/; HttpOnly'],
+      tokenResponse: { accessToken: 'fresh-token' },
+    });
+
+    const request = new NextRequest('https://example.com/trpc/lambda', {
+      headers: { cookie: 'nyxid_access_token=stale' },
+    });
+
+    const context = await createLambdaContext(request);
+
+    expect(mockValidateOIDCJWT).toHaveBeenCalledWith('fresh-token');
+    expect(context.userId).toBe('oidc-user');
+    expect(context.resHeaders?.get('set-cookie')).toContain('nyxid_access_token=fresh');
   });
 
   it('should reject inactive OIDC auth without falling back to session', async () => {

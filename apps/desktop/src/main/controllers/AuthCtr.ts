@@ -6,6 +6,7 @@ import type {
   AuthorizationProgress,
   DataSyncConfig,
   MarketAuthorizationParams,
+  NyxIdAuthorizationPayload,
 } from '@lobechat/electron-client-ipc';
 import { BrowserWindow, shell } from 'electron';
 
@@ -110,7 +111,7 @@ export default class AuthCtr extends ControllerModule {
     const remoteUrl = await this.remoteServerConfigCtr.getRemoteServerUrl(config);
 
     // Cache remote server URL for subsequent polling
-    this.cachedRemoteUrl = remoteUrl;
+      this.cachedRemoteUrl = remoteUrl ?? null;
 
     logger.info(
       `Requesting NyxID authorization, storageMode:${config.storageMode} server URL: ${remoteUrl}`,
@@ -241,7 +242,7 @@ export default class AuthCtr extends ControllerModule {
         const result = await this.remoteServerConfigCtr.refreshAccessToken();
         if (result.success) {
           logger.info('Auto-refresh successful');
-          this.broadcastTokenRefreshed();
+          await this.broadcastTokenRefreshed();
         } else {
           logger.error(`Auto-refresh failed after retries: ${result.error}`);
 
@@ -291,7 +292,7 @@ export default class AuthCtr extends ControllerModule {
       if (result.success) {
         logger.info('Token refresh successful via AuthCtr call.');
         // Notify render process that token has been refreshed
-        this.broadcastTokenRefreshed();
+        await this.broadcastTokenRefreshed();
         // Restart auto-refresh timer with new expiration time
         this.startAutoRefresh();
         return { success: true };
@@ -334,7 +335,13 @@ export default class AuthCtr extends ControllerModule {
   /**
    * Exchange authorization code for token
    */
-  private async exchangeCodeForToken(code: string, codeVerifier: string) {
+  private async exchangeCodeForToken(
+    code: string,
+    codeVerifier: string,
+  ): Promise<
+    | { payload: NyxIdAuthorizationPayload; success: true }
+    | { error: string; success: false }
+  > {
     logger.info('Starting to exchange authorization code for token');
     try {
       const tokenUrl = await this.getTokenEndpoint();
@@ -408,7 +415,14 @@ export default class AuthCtr extends ControllerModule {
       this.connectGateway();
       this.clearAuthorizationState();
 
-      return { success: true };
+      return {
+        payload: this.createNyxIdAuthorizationPayload(
+          data.access_token,
+          data.refresh_token,
+          data.expires_in,
+        ),
+        success: true,
+      };
     } catch (error) {
       logger.error('Exchanging authorization code failed:', error);
       this.clearAuthorizationState();
@@ -435,13 +449,14 @@ export default class AuthCtr extends ControllerModule {
   /**
    * Broadcast token refreshed event
    */
-  private broadcastTokenRefreshed() {
+  private async broadcastTokenRefreshed() {
     logger.debug('Broadcasting tokenRefreshed event to all windows');
+    const payload = await this.getCurrentNyxIdAuthorizationPayload();
     const allWindows = BrowserWindow.getAllWindows();
 
     for (const win of allWindows) {
       if (!win.isDestroyed()) {
-        win.webContents.send('tokenRefreshed');
+        win.webContents.send('tokenRefreshed', payload);
       }
     }
   }
@@ -449,13 +464,13 @@ export default class AuthCtr extends ControllerModule {
   /**
    * Broadcast authorization successful event
    */
-  private broadcastAuthorizationSuccessful() {
+  private broadcastAuthorizationSuccessful(payload: NyxIdAuthorizationPayload) {
     logger.debug('Broadcasting authorizationSuccessful event to all windows');
     const allWindows = BrowserWindow.getAllWindows();
 
     for (const win of allWindows) {
       if (!win.isDestroyed()) {
-        win.webContents.send('authorizationSuccessful');
+        win.webContents.send('authorizationSuccessful', payload);
       }
     }
   }
@@ -612,7 +627,7 @@ export default class AuthCtr extends ControllerModule {
     const refreshResult = await this.remoteServerConfigCtr.refreshAccessToken();
     if (refreshResult.success) {
       logger.info('Proactive token refresh successful');
-      this.broadcastTokenRefreshed();
+      await this.broadcastTokenRefreshed();
       this.startAutoRefresh();
     } else {
       logger.error(`Proactive token refresh failed: ${refreshResult.error}`);
@@ -693,12 +708,35 @@ export default class AuthCtr extends ControllerModule {
 
     if (exchangeResult.success) {
       logger.info('Authorization successful');
-      this.broadcastAuthorizationSuccessful();
+      this.broadcastAuthorizationSuccessful(exchangeResult.payload);
       return true;
     }
 
     logger.warn(`Authorization failed: ${exchangeResult.error || 'Unknown error'}`);
     this.broadcastAuthorizationFailed(exchangeResult.error || 'Unknown error');
     return false;
+  }
+
+  private createNyxIdAuthorizationPayload(
+    accessToken: string,
+    refreshToken?: string,
+    expiresIn?: number,
+  ): NyxIdAuthorizationPayload {
+    return {
+      accessToken,
+      expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
+      refreshToken,
+    };
+  }
+
+  private async getCurrentNyxIdAuthorizationPayload(): Promise<NyxIdAuthorizationPayload> {
+    const accessToken = await this.remoteServerConfigCtr.getAccessToken();
+    const refreshToken = await this.remoteServerConfigCtr.getRefreshToken();
+
+    return {
+      accessToken: accessToken || '',
+      expiresAt: this.remoteServerConfigCtr.getTokenExpiresAt(),
+      refreshToken: refreshToken || undefined,
+    };
   }
 }

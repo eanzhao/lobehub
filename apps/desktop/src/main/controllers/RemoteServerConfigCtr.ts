@@ -552,7 +552,7 @@ export default class RemoteServerConfigCtr extends ControllerModule {
 
     return { success: true };
   }
-}
+
   private getNyxIdClientId(): string {
     if (!AUTH_GENERIC_OIDC_ID) {
       throw new Error('AUTH_GENERIC_OIDC_ID is required for desktop NyxID OAuth');
@@ -590,3 +590,4 @@ export default class RemoteServerConfigCtr extends ControllerModule {
 
     return data.token_endpoint;
   }
+}

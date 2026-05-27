@@ -17,9 +17,11 @@ const {
   mockAssertOIDCUserActive,
   mockAuthEnv,
   mockEnsureOIDCUserRecord,
-  mockGetServerDB,
   mockExtractBearerToken,
+  mockExtractNyxIdAccessTokenFromCookieHeader,
+  mockGetServerDB,
   mockIsStatelessOIDCAuthEnabled,
+  mockRefreshNyxIdSessionFromCookies,
   mockServerDB,
   mockValidateApiKeyFormat,
   mockValidateOIDCJWT,
@@ -28,8 +30,10 @@ const {
   mockAuthEnv: { ENABLE_OIDC: true },
   mockEnsureOIDCUserRecord: vi.fn(),
   mockExtractBearerToken: vi.fn(),
+  mockExtractNyxIdAccessTokenFromCookieHeader: vi.fn(),
   mockGetServerDB: vi.fn(),
   mockIsStatelessOIDCAuthEnabled: vi.fn(),
+  mockRefreshNyxIdSessionFromCookies: vi.fn(),
   mockServerDB: {},
   mockValidateApiKeyFormat: vi.fn(),
   mockValidateOIDCJWT: vi.fn(),
@@ -41,6 +45,11 @@ vi.mock('@/database/core/db-adaptor', () => ({
 
 vi.mock('@/database/models/apiKey', () => ({
   ApiKeyModel: class {},
+}));
+
+vi.mock('@/business/server/nyxid-auth', () => ({
+  extractNyxIdAccessTokenFromCookieHeader: mockExtractNyxIdAccessTokenFromCookieHeader,
+  refreshNyxIdSessionFromCookies: mockRefreshNyxIdSessionFromCookies,
 }));
 
 vi.mock('@/envs/auth', () => ({
@@ -90,8 +99,10 @@ describe('OpenAPI auth middleware', () => {
     vi.clearAllMocks();
     mockAuthEnv.ENABLE_OIDC = true;
     mockExtractBearerToken.mockReturnValue('oidc-token');
+    mockExtractNyxIdAccessTokenFromCookieHeader.mockReturnValue(undefined);
     mockGetServerDB.mockResolvedValue(mockServerDB);
     mockIsStatelessOIDCAuthEnabled.mockReturnValue(true);
+    mockRefreshNyxIdSessionFromCookies.mockResolvedValue(undefined);
     mockValidateApiKeyFormat.mockReturnValue(false);
     mockEnsureOIDCUserRecord.mockResolvedValue(undefined);
     mockValidateOIDCJWT.mockResolvedValue({
@@ -136,5 +147,25 @@ describe('OpenAPI auth middleware', () => {
 
     expect(response.status).toBe(401);
     expect(mockAssertOIDCUserActive).toHaveBeenCalledWith(mockServerDB, 'banned-user');
+  });
+
+  it('should refresh expired NyxID cookie auth and append Set-Cookie', async () => {
+    const app = createApp();
+    mockExtractBearerToken.mockReturnValue(undefined);
+    mockRefreshNyxIdSessionFromCookies.mockResolvedValueOnce({
+      setCookieHeaders: ['nyxid_access_token=fresh; Path=/; HttpOnly'],
+      tokenResponse: { accessToken: 'fresh-token' },
+    });
+
+    const response = await app.request('/protected', {
+      headers: { cookie: 'nyxid_access_token=stale' },
+    });
+
+    await expect(response.json()).resolves.toEqual({
+      authType: 'oidc',
+      userId: 'oidc-user',
+    });
+    expect(mockValidateOIDCJWT).toHaveBeenCalledWith('fresh-token');
+    expect(response.headers.get('set-cookie')).toContain('nyxid_access_token=fresh');
   });
 });

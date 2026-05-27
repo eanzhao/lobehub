@@ -81,6 +81,7 @@ const mockRemoteServerConfigCtr = {
   clearTokens: vi.fn().mockResolvedValue(undefined),
   getAccessToken: vi.fn().mockResolvedValue('mock-access-token'),
   getLastTokenRefreshAt: vi.fn().mockReturnValue(Date.now()),
+  getRefreshToken: vi.fn().mockResolvedValue('mock-refresh-token'),
   getRemoteServerConfig: vi.fn().mockResolvedValue({ active: true, storageMode: 'cloud' }),
   getRemoteServerUrl: vi.fn().mockImplementation(async (config?: DataSyncConfig) => {
     if (config?.storageMode === 'selfHost') {
@@ -398,7 +399,11 @@ describe('AuthCtr', () => {
         await new Promise((resolve) => setTimeout(resolve, 4000));
 
         // Verify authorizationSuccessful was broadcast
-        expect(mockWindow.webContents.send).toHaveBeenCalledWith('authorizationSuccessful');
+        expect(mockWindow.webContents.send).toHaveBeenCalledWith('authorizationSuccessful', {
+          accessToken: 'new-access-token',
+          expiresAt: expect.any(Number),
+          refreshToken: 'new-refresh-token',
+        });
       }, 6000);
 
       it('should validate state parameter and reject mismatched state', async () => {
@@ -744,7 +749,11 @@ describe('AuthCtr', () => {
         await authCtr.onAppActivate();
 
         expect(mockRemoteServerConfigCtr.refreshAccessToken).toHaveBeenCalled();
-        expect(mockWindow.webContents.send).toHaveBeenCalledWith('tokenRefreshed');
+        expect(mockWindow.webContents.send).toHaveBeenCalledWith('tokenRefreshed', {
+          accessToken: 'mock-access-token',
+          expiresAt: expect.any(Number),
+          refreshToken: expect.any(String),
+        });
       });
 
       it('should NOT refresh token when it is not expiring soon', async () => {

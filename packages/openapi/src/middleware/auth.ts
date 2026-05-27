@@ -2,7 +2,10 @@ import debug from 'debug';
 import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
-import { extractNyxIdAccessTokenFromCookieHeader } from '@/business/server/nyxid-auth';
+import {
+  extractNyxIdAccessTokenFromCookieHeader,
+  refreshNyxIdSessionFromCookies,
+} from '@/business/server/nyxid-auth';
 import { getServerDB } from '@/database/core/db-adaptor';
 import { ApiKeyModel } from '@/database/models/apiKey';
 import { authEnv } from '@/envs/auth';
@@ -63,8 +66,15 @@ export const userAuthMiddleware = async (c: Context, next: Next) => {
 
   // Get Authorization header (standard Bearer token)
   const authorizationHeader = c.req.header('Authorization');
+  const refreshedNyxIdSession = await refreshNyxIdSessionFromCookies(c.req.header('cookie'), {
+    secure: new URL(c.req.url).protocol === 'https:',
+  });
+  for (const setCookieHeader of refreshedNyxIdSession?.setCookieHeaders || []) {
+    c.res.headers.append('Set-Cookie', setCookieHeader);
+  }
   const bearerToken =
     extractBearerToken(authorizationHeader) ||
+    refreshedNyxIdSession?.tokenResponse.accessToken ||
     extractNyxIdAccessTokenFromCookieHeader(c.req.header('cookie'));
 
   let userId: string | null = null;

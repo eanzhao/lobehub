@@ -2,9 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildNyxIdAuthorizationUrl,
+  createNyxIdSessionCookieHeaders,
   discoverNyxId,
   exchangeNyxIdAuthorizationCode,
+  isNyxIdAccessTokenExpired,
+  nyxIdCookieNames,
+  nyxIdRefreshCookieMaxAge,
+  parseNyxIdCookies,
   refreshNyxIdAccessToken,
+  refreshNyxIdSessionFromCookies,
 } from './nyxid-auth';
 
 vi.mock('@/envs/auth', () => ({
@@ -202,5 +208,107 @@ describe('nyxid-auth', () => {
     ).rejects.toThrow(
       'NyxID token request failed: 400 Bad Request Authorization code expired',
     );
+  });
+
+  it('parses NyxID cookies from request header', () => {
+    expect(
+      parseNyxIdCookies(
+        [
+          `${nyxIdCookieNames.accessToken}=access-token`,
+          `${nyxIdCookieNames.expiresAt}=123456`,
+          `${nyxIdCookieNames.refreshToken}=refresh-token`,
+          `${nyxIdCookieNames.scope}=openid%20profile`,
+        ].join('; '),
+      ),
+    ).toEqual({
+      accessToken: 'access-token',
+      expiresAt: 123456,
+      refreshToken: 'refresh-token',
+      scope: 'openid profile',
+    });
+  });
+
+  it('creates persistent NyxID session cookies', () => {
+    const headers = createNyxIdSessionCookieHeaders(
+      {
+        accessToken: 'access-token',
+        expiresIn: 3600,
+        refreshToken: 'refresh-token',
+        scope: 'openid profile',
+        tokenType: 'Bearer',
+      },
+      { secure: true },
+    );
+
+    expect(headers).toHaveLength(4);
+    expect(headers[0]).toContain(`${nyxIdCookieNames.accessToken}=access-token`);
+    expect(headers[0]).toContain('HttpOnly');
+    expect(headers[0]).toContain('Max-Age=3600');
+    expect(headers[0]).toContain('Secure');
+    expect(headers[2]).toContain(`${nyxIdCookieNames.scope}=openid%20profile`);
+    expect(headers[3]).toContain(`${nyxIdCookieNames.refreshToken}=refresh-token`);
+    expect(headers[3]).toContain(`Max-Age=${nyxIdRefreshCookieMaxAge}`);
+  });
+
+  it('detects when NyxID access token is expired or near expiry', () => {
+    expect(isNyxIdAccessTokenExpired(Date.now() - 1000)).toBe(true);
+    expect(isNyxIdAccessTokenExpired(Date.now() + 30 * 1000)).toBe(true);
+    expect(isNyxIdAccessTokenExpired(Date.now() + 5 * 60 * 1000)).toBe(false);
+  });
+
+  it('refreshes expired NyxID session from cookies', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          authorization_endpoint: 'https://nyxid.example.com/oauth/authorize',
+          issuer: 'https://nyxid.example.com',
+          token_endpoint: 'https://nyxid.example.com/oauth/token',
+        }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          access_token: 'access-next',
+          expires_in: 1800,
+          refresh_token: 'refresh-next',
+          scope: 'openid profile',
+          token_type: 'Bearer',
+        }),
+      );
+
+    await expect(
+      refreshNyxIdSessionFromCookies(
+        [
+          `${nyxIdCookieNames.accessToken}=access-old`,
+          `${nyxIdCookieNames.expiresAt}=${Date.now() - 1000}`,
+          `${nyxIdCookieNames.refreshToken}=refresh-old`,
+        ].join('; '),
+        { secure: false },
+        fetchSpy,
+      ),
+    ).resolves.toMatchObject({
+      tokenResponse: {
+        accessToken: 'access-next',
+        expiresIn: 1800,
+        refreshToken: 'refresh-next',
+        scope: 'openid profile',
+        tokenType: 'Bearer',
+      },
+    });
+  });
+
+  it('skips NyxID refresh when token is still valid', async () => {
+    await expect(
+      refreshNyxIdSessionFromCookies(
+        [
+          `${nyxIdCookieNames.accessToken}=access-old`,
+          `${nyxIdCookieNames.expiresAt}=${Date.now() + 10 * 60 * 1000}`,
+          `${nyxIdCookieNames.refreshToken}=refresh-old`,
+        ].join('; '),
+        { secure: false },
+        fetchSpy,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

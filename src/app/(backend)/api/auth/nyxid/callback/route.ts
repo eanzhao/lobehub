@@ -1,6 +1,7 @@
 import {
   exchangeNyxIdAuthorizationCode,
   nyxIdCookieNames,
+  nyxIdRefreshCookieMaxAge,
 } from '@/business/server/nyxid-auth';
 import { appEnv } from '@/envs/app';
 import { NextResponse } from 'next/server';
@@ -28,7 +29,6 @@ export const GET = async (request: Request) => {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
   const state = requestUrl.searchParams.get('state');
-  const cookieStore = request.headers.get('cookie');
   const responseError = NextResponse.redirect(buildSigninRedirect('callback_error'));
 
   const requestCookies = request.headers.get('cookie') ?? '';
@@ -69,18 +69,21 @@ export const GET = async (request: Request) => {
 
     response.cookies.set(nyxIdCookieNames.accessToken, tokenResponse.accessToken, {
       httpOnly: true,
+      maxAge: tokenResponse.expiresIn,
       path: '/',
       sameSite: 'lax',
       secure,
     });
     response.cookies.set(nyxIdCookieNames.expiresAt, String(expiresAt), {
       httpOnly: true,
+      maxAge: tokenResponse.expiresIn,
       path: '/',
       sameSite: 'lax',
       secure,
     });
     response.cookies.set(nyxIdCookieNames.scope, tokenResponse.scope ?? '', {
       httpOnly: true,
+      maxAge: tokenResponse.expiresIn,
       path: '/',
       sameSite: 'lax',
       secure,
@@ -89,6 +92,7 @@ export const GET = async (request: Request) => {
     if (tokenResponse.refreshToken) {
       response.cookies.set(nyxIdCookieNames.refreshToken, tokenResponse.refreshToken, {
         httpOnly: true,
+        maxAge: nyxIdRefreshCookieMaxAge,
         path: '/',
         sameSite: 'lax',
         secure,

@@ -2,6 +2,12 @@ export interface MarketAuthorizationParams {
   authUrl: string;
 }
 
+export interface NyxIdAuthorizationPayload {
+  accessToken: string;
+  expiresAt?: number;
+  refreshToken?: string;
+}
+
 /**
  * Authorization phase for progress tracking
  */
@@ -31,7 +37,7 @@ export interface RemoteServerBroadcastEvents {
   /** Broadcast authorization progress for UI updates */
   authorizationProgress: (params: AuthorizationProgress) => void;
   authorizationRequired: (params: void) => void;
-  authorizationSuccessful: (params: void) => void;
+  authorizationSuccessful: (params: NyxIdAuthorizationPayload) => void;
   remoteServerConfigUpdated: (params: void) => void;
-  tokenRefreshed: (params: void) => void;
+  tokenRefreshed: (params: NyxIdAuthorizationPayload) => void;
 }

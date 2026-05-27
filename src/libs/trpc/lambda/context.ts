@@ -5,7 +5,10 @@ import debug from 'debug';
 import { type NextRequest } from 'next/server';
 
 import { auth } from '@/auth';
-import { extractNyxIdAccessTokenFromCookieHeader } from '@/business/server/nyxid-auth';
+import {
+  extractNyxIdAccessTokenFromCookieHeader,
+  refreshNyxIdSessionFromCookies,
+} from '@/business/server/nyxid-auth';
 import { getServerDB } from '@/database/core/db-adaptor';
 import { ApiKeyModel } from '@/database/models/apiKey';
 import { authEnv, LOBE_CHAT_OIDC_AUTH_HEADER } from '@/envs/auth';
@@ -85,12 +88,13 @@ export const createContextInner = async (params?: {
   clientIp?: string | null;
   marketAccessToken?: string;
   oidcAuth?: OIDCAuth | null;
+  resHeaders?: Headers;
   traceContext?: OtContext;
   userAgent?: string;
   userId?: string | null;
 }): Promise<AuthContext> => {
   log('createContextInner called with params: %O', params);
-  const responseHeaders = new Headers();
+  const responseHeaders = params?.resHeaders || new Headers();
 
   return {
     clientIp: params?.clientIp,
@@ -131,6 +135,13 @@ export const createLambdaContext = async (request: NextRequest): Promise<LambdaC
   const cookieHeader = request.headers.get('cookie');
   const cookies = cookieHeader ? parse(cookieHeader) : {};
   const marketAccessToken = cookies['mp_token'];
+  const refreshedNyxIdSession = await refreshNyxIdSessionFromCookies(cookieHeader, {
+    secure: new URL(request.url).protocol === 'https:',
+  });
+  const nyxIdResponseHeaders = new Headers();
+  for (const setCookieHeader of refreshedNyxIdSession?.setCookieHeaders || []) {
+    nyxIdResponseHeaders.append('Set-Cookie', setCookieHeader);
+  }
   // Extract upstream trace context for parent linking
   const traceContext = extractTraceContext(request.headers);
 
@@ -174,6 +185,7 @@ export const createLambdaContext = async (request: NextRequest): Promise<LambdaC
     log('OIDC enabled, attempting OIDC authentication');
     const oidcAuthToken =
       request.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER) ||
+      refreshedNyxIdSession?.tokenResponse.accessToken ||
       extractNyxIdAccessTokenFromCookieHeader(cookieHeader);
     log('Oidc-Auth header: %s', oidcAuthToken ? 'exists' : 'not found');
 
@@ -199,6 +211,7 @@ export const createLambdaContext = async (request: NextRequest): Promise<LambdaC
         return createContextInner({
           oidcAuth,
           ...commonContext,
+          resHeaders: nyxIdResponseHeaders,
           traceContext,
           userId,
         });
@@ -238,6 +251,7 @@ export const createLambdaContext = async (request: NextRequest): Promise<LambdaC
 
     return createContextInner({
       ...commonContext,
+      resHeaders: nyxIdResponseHeaders,
       traceContext,
       userId,
     });
@@ -251,5 +265,10 @@ export const createLambdaContext = async (request: NextRequest): Promise<LambdaC
     'All authentication methods attempted, returning final context, userId: %s',
     userId || 'not authenticated',
   );
-  return createContextInner({ ...commonContext, traceContext, userId });
+  return createContextInner({
+    ...commonContext,
+    resHeaders: nyxIdResponseHeaders,
+    traceContext,
+    userId,
+  });
 };

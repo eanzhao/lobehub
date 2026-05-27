@@ -42,6 +42,7 @@ export type {
   AuthorizationPhase,
   AuthorizationProgress,
   MarketAuthorizationParams,
+  NyxIdAuthorizationPayload,
 } from './remoteServer';
 export type { OverlayDispatchMessagePayload } from './screenCapture';
 export type { OpenSettingsWindowOptions } from './windows';
