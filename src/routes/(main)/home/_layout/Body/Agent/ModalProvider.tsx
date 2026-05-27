@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { ChatGroupWizard } from '@/components/ChatGroupWizard';
 import { MemberSelectionModal } from '@/components/MemberSelectionModal';
+import ConnectAevatarAgentModal from '@/features/ConnectAevatarAgent';
 import CreatePlatformAgentModal from '@/features/CreatePlatformAgent';
 import EditingPopover from '@/features/EditingPopover';
 import { CreateAgentModal } from '@/routes/(main)/home/_layout/hooks/useCreateModal';
@@ -24,11 +25,13 @@ interface OpenCreateModalOptions {
 interface AgentModalContextValue {
   closeAllModals: () => void;
   closeConfigGroupModal: () => void;
+  closeConnectAevatarAgentModal: () => void;
   closeCreateGroupModal: () => void;
   closeCreatePlatformAgentModal: () => void;
   closeGroupWizardModal: () => void;
   closeMemberSelectionModal: () => void;
   openConfigGroupModal: () => void;
+  openConnectAevatarAgentModal: (options?: OpenCreateModalOptions) => void;
   openCreateGroupModal: (sessionId: string) => void;
   openCreateModal: (type: 'agent' | 'group', options?: OpenCreateModalOptions) => void;
   openCreatePlatformAgentModal: (options?: OpenCreateModalOptions) => void;
@@ -144,6 +147,12 @@ export const AgentModalProvider = memo<AgentModalProviderProps>(({ children }) =
     undefined,
   );
 
+  // ConnectAevatarAgentModal state (issue #4)
+  const [connectAevatarAgentOpen, setConnectAevatarAgentOpen] = useState(false);
+  const [connectAevatarAgentGroupId, setConnectAevatarAgentGroupId] = useState<string | undefined>(
+    undefined,
+  );
+
   const contextValue = useMemo<AgentModalContextValue>(
     () => ({
       closeAllModals: () => {
@@ -153,13 +162,19 @@ export const AgentModalProvider = memo<AgentModalProviderProps>(({ children }) =
         setMemberSelectionOpen(false);
         setCreateModalOpen(false);
         setCreatePlatformAgentOpen(false);
+        setConnectAevatarAgentOpen(false);
       },
       closeConfigGroupModal: () => setConfigGroupModalOpen(false),
+      closeConnectAevatarAgentModal: () => setConnectAevatarAgentOpen(false),
       closeCreateGroupModal: () => setCreateGroupModalOpen(false),
       closeCreatePlatformAgentModal: () => setCreatePlatformAgentOpen(false),
       closeGroupWizardModal: () => setGroupWizardOpen(false),
       closeMemberSelectionModal: () => setMemberSelectionOpen(false),
       openConfigGroupModal: () => setConfigGroupModalOpen(true),
+      openConnectAevatarAgentModal: (options?: OpenCreateModalOptions) => {
+        setConnectAevatarAgentGroupId(options?.groupId);
+        setConnectAevatarAgentOpen(true);
+      },
       openCreateGroupModal: (sessionId: string) => {
         setCreateGroupSessionId(sessionId);
         setCreateGroupModalOpen(true);
@@ -198,6 +213,11 @@ export const AgentModalProvider = memo<AgentModalProviderProps>(({ children }) =
         groupId={createPlatformAgentGroupId}
         open={createPlatformAgentOpen}
         onClose={() => setCreatePlatformAgentOpen(false)}
+      />
+      <ConnectAevatarAgentModal
+        groupId={connectAevatarAgentGroupId}
+        open={connectAevatarAgentOpen}
+        onClose={() => setConnectAevatarAgentOpen(false)}
       />
       {children}
 

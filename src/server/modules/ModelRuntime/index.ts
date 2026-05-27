@@ -59,6 +59,23 @@ const resolveRuntimeProvider = (provider: string, sdkType?: string): string => {
 };
 
 /**
+ * Per-agent overrides applied on top of the user's keyVaults. Used to
+ * implement remote-bound agents (issue #4): a single user may bind topics
+ * to different aevatar deployments, so the binding lives on the `agents`
+ * row, not on the provider-level keyVaults.
+ */
+export interface RemoteBindingOverrides {
+  /** Overrides keyVaults.baseURL (e.g. for per-agent aevatar deployment). */
+  baseURL?: string;
+  /**
+   * Targeting metadata: the remote GAgent (Actor) id on the bound aevatar
+   * server. Forwarded to the aevatar provider so it can be attached to the
+   * chat request body.
+   */
+  remoteAgentId?: string;
+}
+
+/**
  * Build ClientSecretPayload from keyVaults stored in database
  *
  * This is the server-side equivalent of the frontend's getProviderAuthPayload function.
@@ -71,12 +88,26 @@ const resolveRuntimeProvider = (provider: string, sdkType?: string): string => {
  *
  * @param keyVaults - The keyVaults object from database (already decrypted)
  * @param runtimeProvider - The runtime provider (sdkType) to use for building payload
+ * @param remoteBinding - Optional per-agent overrides (issue #4: remote GAgent binding)
  * @returns ClientSecretPayload for the provider
  */
 export const buildPayloadFromKeyVaults = (
   keyVaults: ProviderKeyVaults,
   runtimeProvider: string,
+  remoteBinding?: RemoteBindingOverrides,
 ): ClientSecretPayload => {
+  // For the aevatar provider, apply per-agent overrides on top of the user's
+  // keyVaults. A `null` from the agents row falls back to keyVaults; a
+  // non-empty string wins. The aevatar provider downstream reads
+  // `remoteAgentId` from the payload to attach to the request body.
+  if (runtimeProvider === ModelProvider.Aevatar && remoteBinding) {
+    return {
+      apiKey: keyVaults.apiKey,
+      baseURL: remoteBinding.baseURL || keyVaults.baseURL,
+      remoteAgentId: remoteBinding.remoteAgentId,
+      runtimeProvider,
+    };
+  }
   // Use runtimeProvider to determine which fields to include
   // This handles both builtin providers and custom providers with sdkType
   switch (runtimeProvider) {
@@ -179,9 +210,19 @@ const getParamsFromPayload = (provider: string, payload: ClientSecretPayload) =>
     }
 
     case ModelProvider.Aevatar: {
+      // `baseURL` is set in priority order: per-agent override (when a
+      // topic is bound to a remote GAgent via the `remote_endpoint` column on
+      // the `agents` table) → user keyVaults → env fallback. The override is
+      // injected by buildPayloadFromKeyVaults via the optional second arg.
+      const baseURL = payload?.baseURL || process.env.AEVATAR_BASE_URL;
       return {
         apiKey: apiKeyManager.pick(payload?.apiKey),
-        baseURL: payload?.baseURL || process.env.AEVATAR_BASE_URL,
+        baseURL,
+        // `remoteAgentId` is the target GAgent (Actor) id on the aevatar
+        // server. Pulled from the lobehub `agents.remote_agent_id` column when
+        // the agent has a remote binding; forwarded to the provider so the
+        // request body carries `agentId` for server-side routing.
+        remoteAgentId: payload?.remoteAgentId,
       };
     }
 
@@ -399,6 +440,10 @@ export const initModelRuntimeWithUserPayload = (
  * @param db - The database instance
  * @param userId - The user ID
  * @param provider - The model provider (e.g., 'openai', 'azure')
+ * @param remoteBinding - Optional per-agent overrides (e.g. aevatar remote
+ *   GAgent binding from the `agents.remote_endpoint` / `remote_agent_id`
+ *   columns). When provided, supersedes user-level keyVaults for the
+ *   relevant fields.
  * @returns Promise<ModelRuntime> - The initialized ModelRuntime instance
  *
  * @example
@@ -411,6 +456,7 @@ export const initModelRuntimeFromDB = async (
   db: LobeChatDatabase,
   userId: string,
   provider: string,
+  remoteBinding?: RemoteBindingOverrides,
 ): Promise<ModelRuntime> => {
   // 1. Get user's provider configuration from database
   const aiProviderModel = new AiProviderModel(db, userId);
@@ -429,7 +475,7 @@ export const initModelRuntimeFromDB = async (
   // 3. Build ClientSecretPayload from keyVaults based on runtimeProvider
   // This ensures provider-specific fields (e.g., cloudflareBaseURLOrAccountID) are included
   const keyVaults = (providerConfig?.keyVaults || {}) as ProviderKeyVaults;
-  const payload = buildPayloadFromKeyVaults(keyVaults, runtimeProvider);
+  const payload = buildPayloadFromKeyVaults(keyVaults, runtimeProvider, remoteBinding);
 
   // 4. Get business hooks (billing in cloud, undefined in OSS)
   const businessHooks = getBusinessModelRuntimeHooks(userId, provider);

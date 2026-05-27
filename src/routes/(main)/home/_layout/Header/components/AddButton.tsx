@@ -14,6 +14,7 @@ const AddButton = memo(() => {
 
   // Create menu items
   const {
+    connectAevatarAgentMenuItem,
     createAgentMenuItem,
     createGroupChatMenuItem,
     createHeterogeneousAgentMenuItems,
@@ -36,6 +37,7 @@ const AddButton = memo(() => {
   const dropdownItems = useMemo(() => {
     const heterogeneousItems = createHeterogeneousAgentMenuItems();
     const platformItem = createPlatformAgentMenuItem();
+    const aevatarItem = connectAevatarAgentMenuItem();
 
     return [
       createAgentMenuItem(),
@@ -45,8 +47,10 @@ const AddButton = memo(() => {
         ? [{ type: 'divider' as const }, ...heterogeneousItems]
         : []),
       ...(platformItem ? [{ type: 'divider' as const }, platformItem] : []),
+      ...(aevatarItem ? [aevatarItem] : []),
     ];
   }, [
+    connectAevatarAgentMenuItem,
     createAgentMenuItem,
     createGroupChatMenuItem,
     createHeterogeneousAgentMenuItems,

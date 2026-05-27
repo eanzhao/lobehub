@@ -4,7 +4,14 @@ import { Icon } from '@lobehub/ui';
 import { GroupBotSquareIcon } from '@lobehub/ui/icons';
 import { App } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
-import { BotIcon, FileTextIcon, FolderCogIcon, FolderPlus, MonitorSmartphone } from 'lucide-react';
+import {
+  BotIcon,
+  FileTextIcon,
+  FolderCogIcon,
+  FolderPlus,
+  GlobeIcon,
+  MonitorSmartphone,
+} from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -269,6 +276,27 @@ export const useCreateMenuItems = () => {
   );
 
   /**
+   * Connect aevatar GAgent menu item (issue #4 — remote GAgent binding).
+   * Opens the manual-form modal that creates a local agent row tagged as
+   * `remoteKind === 'aevatar'`. The actual chat routing happens on the
+   * server when the user sends a message in this agent's topics.
+   */
+  const connectAevatarAgentMenuItem = useCallback(
+    (options?: CreateAgentOptions): ItemType => ({
+      icon: <Icon icon={GlobeIcon} />,
+      key: 'newAevatarAgent',
+      label: t('newAevatarAgent'),
+      onClick: (info) => {
+        info.domEvent?.stopPropagation();
+        agentModal?.openConnectAevatarAgentModal(
+          options?.groupId ? { groupId: options.groupId } : undefined,
+        );
+      },
+    }),
+    [t, agentModal],
+  );
+
+  /**
    * Create group chat menu item
    * Creates an empty group and navigates to its profile page
    */
@@ -355,6 +383,7 @@ export const useCreateMenuItems = () => {
 
   return {
     configMenuItem,
+    connectAevatarAgentMenuItem,
     createAgent,
     createAgentMenuItem,
     createEmptyGroup,

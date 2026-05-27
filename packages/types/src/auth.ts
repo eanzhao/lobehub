@@ -36,6 +36,14 @@ export interface ClientSecretPayload {
   oauthAccessToken?: string;
   password?: string;
 
+  /**
+   * Aevatar-specific targeting metadata: identifier of the remote GAgent
+   * (Actor) on the aevatar server. Sourced from the lobehub `agents`
+   * row (`remote_agent_id`) when the agent has `remoteKind === 'aevatar'`,
+   * and forwarded by the aevatar provider into the chat request body.
+   */
+  remoteAgentId?: string;
+
   runtimeProvider?: string;
   /**
    * user id

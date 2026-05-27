@@ -331,7 +331,33 @@ export const createRuntimeExecutors = (
 
     // Fallback to state's modelRuntimeConfig if not in payload
     const model = llmPayload.model || state.modelRuntimeConfig?.model;
-    const provider = llmPayload.provider || state.modelRuntimeConfig?.provider;
+    let provider = llmPayload.provider || state.modelRuntimeConfig?.provider;
+
+    // Issue #4: Remote GAgent binding. When the agent row carries
+    // `remoteKind === 'aevatar'`, force the provider to aevatar and pull
+    // baseURL + remoteAgentId from the agent's own columns instead of the
+    // user-level keyVaults. This lets a single user have topics bound to
+    // different aevatar deployments (e.g. dev vs prod). The local
+    // `systemRole / chatConfig / model / provider` on the agent row are
+    // treated as read-only hints — the remote Actor's own configuration
+    // wins server-side.
+    const remoteAgentMeta = state.metadata?.agentConfig as
+      | {
+          remoteAgentId?: string | null;
+          remoteEndpoint?: string | null;
+          remoteKind?: 'aevatar' | null;
+        }
+      | undefined;
+    const isRemoteAevatarAgent = remoteAgentMeta?.remoteKind === 'aevatar';
+    const remoteBinding = isRemoteAevatarAgent
+      ? {
+          baseURL: remoteAgentMeta?.remoteEndpoint ?? undefined,
+          remoteAgentId: remoteAgentMeta?.remoteAgentId ?? undefined,
+        }
+      : undefined;
+    if (isRemoteAevatarAgent) {
+      provider = 'aevatar';
+    }
     // Resolve tools via ToolResolver (unified tool injection).
     //
     // Belt-and-suspenders: even if `aiAgent.execAgent` ever forgets to clear
@@ -855,8 +881,16 @@ export const createRuntimeExecutors = (
         processedMessages = llmPayload.messages;
       }
 
-      // Initialize ModelRuntime (read user's keyVaults from database)
-      const modelRuntime = await initModelRuntimeFromDB(ctx.serverDB, ctx.userId!, provider);
+      // Initialize ModelRuntime (read user's keyVaults from database).
+      // `remoteBinding` is populated when the agent has `remoteKind === 'aevatar'`
+      // and supersedes the per-user keyVaults baseURL + carries the target
+      // GAgent id (issue #4).
+      const modelRuntime = await initModelRuntimeFromDB(
+        ctx.serverDB,
+        ctx.userId!,
+        provider,
+        remoteBinding,
+      );
 
       // Construct ChatStreamPayload
       const stream = ctx.stream ?? true;
