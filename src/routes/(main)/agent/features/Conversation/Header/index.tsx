@@ -15,6 +15,7 @@ import HeaderActions from './HeaderActions';
 import ParamsPanelToggle from './ParamsPanelToggle';
 import ShareButton from './ShareButton';
 import Tags from './Tags';
+import WorkflowInspectorToggle from './WorkflowInspectorToggle';
 import WorkingPanelToggle from './WorkingPanelToggle';
 
 const headerStyles = createStaticStyles(({ css }) => ({
@@ -77,6 +78,7 @@ const Header = memo(() => {
               <OpenInAppButton workingDirectory={effectiveWorkingDirectory} />
             )}
             <ShareButton />
+            <WorkflowInspectorToggle />
             <ParamsPanelToggle />
             <WorkingPanelToggle />
           </Flexbox>

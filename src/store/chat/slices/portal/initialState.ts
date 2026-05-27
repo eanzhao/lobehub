@@ -18,6 +18,12 @@ export enum PortalViewType {
   Notebook = 'notebook',
   Thread = 'thread',
   ToolUI = 'toolUI',
+  /**
+   * Workflow Inspector — read-only DAG of the active aevatar GAgent workflow.
+   * Mounted only when the active agent has `remoteKind === 'aevatar'`.
+   * See `src/features/WorkflowInspector`. (issue #6)
+   */
+  WorkflowInspector = 'workflowInspector',
 }
 
 export interface PortalFile {
@@ -36,7 +42,8 @@ export type PortalViewData =
   | { messageId: string; type: PortalViewType.MessageDetail }
   | { identifier: string; messageId: string; type: PortalViewType.ToolUI }
   | { startMessageId?: string; threadId?: string; type: PortalViewType.Thread }
-  | { agentId: string; type: PortalViewType.GroupThread };
+  | { agentId: string; type: PortalViewType.GroupThread }
+  | { type: PortalViewType.WorkflowInspector };
 
 // ============== Portal State ==============
 

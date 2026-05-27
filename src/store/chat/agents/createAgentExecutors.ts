@@ -38,6 +38,8 @@ import { t } from 'i18next';
 import pMap from 'p-map';
 
 import { LOADING_FLAT } from '@/const/message';
+import { useWorkflowInspectorStore } from '@/features/WorkflowInspector/store';
+import type { WorkflowStateEvent } from '@/features/WorkflowInspector/types';
 import { aiAgentService } from '@/services/aiAgent';
 import { chatService } from '@/services/chat';
 import { type ResolvedAgentConfig } from '@/services/chat/mecha';
@@ -547,6 +549,24 @@ export const createAgentExecutors = (context: {
           );
         },
         onMessageHandle: async (chunk) => {
+          // Issue #6: Forward AGUI workflow events to the WorkflowInspector
+          // store. We dispatch alongside the standard streaming-handler path
+          // (workflow_state is not in `StreamChunk`) so live workflow updates
+          // reach the inspector without touching the chat pipeline.
+          if ((chunk as { type?: string }).type === 'workflow_state') {
+            const workflowChunk = chunk as {
+              id?: string;
+              payload: unknown;
+              type: 'workflow_state';
+            };
+            const handle = useWorkflowInspectorStore.getState().handleWorkflowEvent;
+            handle(
+              topicId ?? undefined,
+              workflowChunk.payload as WorkflowStateEvent,
+              assistantMessageId,
+            );
+            return;
+          }
           handler.handleChunk(chunk as StreamChunk);
         },
       });

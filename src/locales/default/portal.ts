@@ -21,4 +21,6 @@ export default {
   'notebook.title': 'Notebook',
   'openInPageEditor': 'Edit in Page',
   'title': 'Workspace',
+  'workflowInspector.title': 'Workflow Inspector',
+  'workflowInspector.toggle': 'Workflow Inspector',
 };

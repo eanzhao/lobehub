@@ -150,6 +150,13 @@ export class ChatPortalActionImpl {
     }
   };
 
+  closeWorkflowInspector = (): void => {
+    const { portalStack } = this.#get();
+    if (getCurrentViewType(portalStack) === PortalViewType.WorkflowInspector) {
+      this.#get().popPortalView();
+    }
+  };
+
   goBack = (): void => {
     this.#get().popPortalView();
   };
@@ -205,6 +212,28 @@ export class ChatPortalActionImpl {
 
   openToolUI = (messageId: string, identifier: string): void => {
     this.#get().pushPortalView({ identifier, messageId, type: PortalViewType.ToolUI });
+  };
+
+  /**
+   * Issue #6: Open the workflow inspector view in the portal stack. When
+   * already open, this is a no-op via `pushPortalView`'s same-type replace.
+   */
+  openWorkflowInspector = (): void => {
+    this.#get().pushPortalView({ type: PortalViewType.WorkflowInspector });
+  };
+
+  toggleWorkflowInspector = (open?: boolean): void => {
+    const { portalStack } = this.#get();
+    const isCurrentlyOpen =
+      getCurrentViewType(portalStack) === PortalViewType.WorkflowInspector &&
+      this.#get().showPortal;
+    const shouldOpen = open ?? !isCurrentlyOpen;
+
+    if (shouldOpen) {
+      this.#get().openWorkflowInspector();
+    } else {
+      this.#get().closeWorkflowInspector();
+    }
   };
 
   popPortalView = (): void => {
