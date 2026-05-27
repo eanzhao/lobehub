@@ -1746,6 +1746,18 @@ export const createRuntimeExecutors = (
     const operationLogId = `${operationId}:${stepIndex}`;
     log(`[${operationLogId}] payload: %O`, payload);
 
+    // Server-executed tool calls (e.g. aevatar GAgent) have already produced
+    // their result upstream. Mirror the agent-runtime guard at
+    // packages/agent-runtime/src/core/runtime.ts:522-529 — short-circuit before
+    // any side effects so the server custom executor cannot re-invoke the tool
+    // when it overrides the built-in guarded executor.
+    if (payload.toolCalling.executor === 'server') {
+      log(
+        `[${operationLogId}] Skipping server-executed tool (executor=server): ${payload.toolCalling.identifier}/${payload.toolCalling.apiName}`,
+      );
+      return { events, newState: state };
+    }
+
     // Publish tool execution start event
     await streamManager.publishStreamEvent(operationId, {
       data: payload,
@@ -2323,6 +2335,18 @@ export const createRuntimeExecutors = (
     await Promise.all(
       toolsToExecute.map(async (chatToolPayload: ChatToolPayload) => {
         const toolName = `${chatToolPayload.identifier}/${chatToolPayload.apiName}`;
+
+        // Server-executed tool calls (e.g. aevatar GAgent) have already produced
+        // their result upstream. Mirror the agent-runtime guard at
+        // packages/agent-runtime/src/core/runtime.ts:522-529 — short-circuit
+        // before any side effects so the batch executor cannot re-invoke a
+        // tool whose result was already streamed by the source.
+        if (chatToolPayload.executor === 'server') {
+          log(
+            `[${operationLogId}][call_tools_batch] Skipping server-executed tool (executor=server): ${toolName}`,
+          );
+          return;
+        }
 
         // Publish tool execution start event
         await streamManager.publishStreamEvent(operationId, {
