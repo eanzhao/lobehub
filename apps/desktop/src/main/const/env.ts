@@ -8,6 +8,8 @@ export const isDev = electronIs.dev();
 
 export const OFFICIAL_CLOUD_SERVER = getDesktopEnv().OFFICIAL_CLOUD_SERVER;
 export const DESKTOP_EXTERNAL_NAVIGATION_HOSTS = getDesktopEnv().DESKTOP_EXTERNAL_NAVIGATION_HOSTS;
+export const AUTH_GENERIC_OIDC_ID = getDesktopEnv().AUTH_GENERIC_OIDC_ID;
+export const AUTH_GENERIC_OIDC_ISSUER = getDesktopEnv().AUTH_GENERIC_OIDC_ISSUER;
 
 export const isMac = electronIs.macOS();
 export const isWindows = electronIs.windows();

@@ -3,7 +3,7 @@ import { ChatErrorType } from '@lobechat/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { assertOIDCUserActive } from '@/libs/oidc-provider/access-control';
-import { validateOIDCJWT } from '@/libs/oidc-provider/jwt';
+import { ensureOIDCUserRecord, validateOIDCJWT } from '@/libs/oidc-provider/jwt';
 import { createErrorResponse } from '@/utils/errorResponse';
 
 import { checkAuth, type RequestHandler } from './index';
@@ -24,8 +24,19 @@ vi.mock('@lobechat/types', () => ({
 const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 const consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
 
+const { mockExtractNyxIdAccessTokenFromCookieHeader, mockRefreshNyxIdSessionFromCookies } =
+  vi.hoisted(() => ({
+    mockExtractNyxIdAccessTokenFromCookieHeader: vi.fn(),
+    mockRefreshNyxIdSessionFromCookies: vi.fn(),
+  }));
+
 vi.mock('@/utils/errorResponse', () => ({
   createErrorResponse: vi.fn(),
+}));
+
+vi.mock('@/business/server/nyxid-auth', () => ({
+  extractNyxIdAccessTokenFromCookieHeader: mockExtractNyxIdAccessTokenFromCookieHeader,
+  refreshNyxIdSessionFromCookies: mockRefreshNyxIdSessionFromCookies,
 }));
 
 vi.mock('@/auth', () => ({
@@ -50,6 +61,7 @@ vi.mock('@lobechat/observability-otel/api', () => ({
 }));
 
 vi.mock('@/libs/oidc-provider/jwt', () => ({
+  ensureOIDCUserRecord: vi.fn().mockResolvedValue(undefined),
   validateOIDCJWT: vi.fn(),
 }));
 
@@ -68,6 +80,8 @@ describe('checkAuth', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExtractNyxIdAccessTokenFromCookieHeader.mockReturnValue(undefined);
+    mockRefreshNyxIdSessionFromCookies.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -83,11 +97,13 @@ describe('checkAuth', () => {
       tokenData: { sub: 'oidc-user' },
       userId: 'oidc-user',
     } as Awaited<ReturnType<typeof validateOIDCJWT>>);
+    vi.mocked(ensureOIDCUserRecord).mockResolvedValueOnce(undefined);
     vi.mocked(assertOIDCUserActive).mockResolvedValueOnce(undefined);
     vi.mocked(mockHandler).mockResolvedValueOnce(new Response('ok'));
 
     await checkAuth(mockHandler)(oidcRequest, mockOptions);
 
+    expect(ensureOIDCUserRecord).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));
     expect(assertOIDCUserActive).toHaveBeenCalledWith(expect.any(Object), 'oidc-user');
     expect(mockHandler).toHaveBeenCalledWith(
       expect.any(Request),
@@ -96,6 +112,36 @@ describe('checkAuth', () => {
         userId: 'oidc-user',
       }),
     );
+  });
+
+  it('should refresh expired NyxID cookie token and append Set-Cookie headers', async () => {
+    const oidcRequest = {
+      clone: () => new Request('https://example.com/webapi/chat/lobehub'),
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'cookie' ? 'nyxid_access_token=stale' : null),
+      },
+      url: 'https://example.com/webapi/chat/lobehub',
+    } as unknown as Request;
+    mockRefreshNyxIdSessionFromCookies.mockResolvedValueOnce({
+      setCookieHeaders: ['nyxid_access_token=fresh; Path=/; HttpOnly'],
+      tokenResponse: {
+        accessToken: 'fresh-token',
+      },
+    });
+    vi.mocked(validateOIDCJWT).mockResolvedValueOnce({
+      tokenData: { sub: 'oidc-user' },
+      userId: 'oidc-user',
+    } as Awaited<ReturnType<typeof validateOIDCJWT>>);
+    vi.mocked(ensureOIDCUserRecord).mockResolvedValueOnce(undefined);
+    vi.mocked(assertOIDCUserActive).mockResolvedValueOnce(undefined);
+    vi.mocked(mockHandler).mockResolvedValueOnce(new Response('ok'));
+
+    const response = await checkAuth(mockHandler)(oidcRequest, mockOptions);
+
+    expect(mockRefreshNyxIdSessionFromCookies).toHaveBeenCalledWith('nyxid_access_token=stale', {
+      secure: true,
+    });
+    expect(validateOIDCJWT).toHaveBeenCalledWith('fresh-token');
   });
 
   it('should reject an inactive OIDC user without running the handler', async () => {
@@ -109,6 +155,7 @@ describe('checkAuth', () => {
       tokenData: { sub: 'banned-user' },
       userId: 'banned-user',
     } as Awaited<ReturnType<typeof validateOIDCJWT>>);
+    vi.mocked(ensureOIDCUserRecord).mockResolvedValueOnce(undefined);
     vi.mocked(assertOIDCUserActive).mockRejectedValueOnce(inactiveError);
 
     await checkAuth(mockHandler)(oidcRequest, mockOptions);

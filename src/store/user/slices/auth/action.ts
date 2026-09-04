@@ -1,5 +1,6 @@
 import { type SSOProvider } from '@lobechat/types';
 
+import { getNyxIdAuthStoreState } from '@/store/auth/nyxid-slice';
 import { type StoreSetter } from '@/store/types';
 
 import { type UserStore } from '../../store';
@@ -60,6 +61,14 @@ export class UserAuthActionImpl {
   };
 
   logout = async (): Promise<void> => {
+    getNyxIdAuthStoreState().clearNyxIdAuth();
+
+    try {
+      await fetch('/api/auth/nyxid/logout', { method: 'POST' });
+    } catch {
+      // Best-effort: don't block sign-out if NyxID cleanup fails
+    }
+
     // Clear the OIDC Provider session for the current browser *before*
     // destroying the better-auth session. This prevents a stale OIDC session
     // from silently issuing tokens for the old account after the user signs

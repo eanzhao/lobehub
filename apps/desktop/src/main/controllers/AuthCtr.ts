@@ -6,21 +6,23 @@ import type {
   AuthorizationProgress,
   DataSyncConfig,
   MarketAuthorizationParams,
+  NyxIdAuthorizationPayload,
 } from '@lobechat/electron-client-ipc';
 import { BrowserWindow, shell } from 'electron';
 
+import { AUTH_GENERIC_OIDC_ID, AUTH_GENERIC_OIDC_ISSUER } from '@/const/env';
 import GatewayConnectionService from '@/services/gatewayConnectionSrv';
 import { appendVercelCookie } from '@/utils/http-headers';
 import { createLogger } from '@/utils/logger';
 import { netFetch } from '@/utils/net-fetch';
 
-import { ControllerModule, IpcMethod } from './index';
+import { AEVATAR_PROTOCOL_SCHEME } from '../utils/protocol';
+import { ControllerModule, createProtocolHandler, IpcMethod } from './index';
 import RemoteServerConfigCtr from './RemoteServerConfigCtr';
 
 const logger = createLogger('controllers:AuthCtr');
-
-const MAX_POLL_TIME = 2 * 60 * 1000; // 2 minutes (reduced from 5 minutes for better UX)
-const POLL_INTERVAL = 3000; // 3 seconds
+const protocolHandler = createProtocolHandler('auth');
+const DEFAULT_SCOPE = 'openid profile email offline_access';
 
 // Refresh the access token only once it is within this window of its expiry. Kept
 // small (minutes) on purpose: a buffer that is large relative to the server's
@@ -30,7 +32,7 @@ const TOKEN_REFRESH_BUFFER = 10 * 60 * 1000; // 10 minutes
 
 /**
  * Authentication Controller
- * Implements OAuth authorization flow using intermediate page + polling mechanism
+ * Implements NyxID OAuth authorization flow using PKCE + desktop deep links.
  */
 export default class AuthCtr extends ControllerModule {
   static override readonly groupName = 'auth';
@@ -47,11 +49,6 @@ export default class AuthCtr extends ControllerModule {
   private codeVerifier: string | null = null;
   private authRequestState: string | null = null;
 
-  /**
-   * Polling related parameters
-   */
-
-  private pollingInterval: NodeJS.Timeout | null = null;
   private cachedRemoteUrl: string | null = null;
 
   /**
@@ -61,13 +58,46 @@ export default class AuthCtr extends ControllerModule {
   private autoRefreshTimer: NodeJS.Timeout | null = null;
 
   /**
-   * Construct redirect_uri, ensuring the same URI is used for authorization and token exchange
-   * @param remoteUrl Remote server URL
+   * Construct desktop callback URI for NyxID OAuth.
    */
-  private constructRedirectUri(remoteUrl: string): string {
-    const callbackUrl = new URL('/oidc/callback/desktop', remoteUrl);
+  private constructRedirectUri(): string {
+    return `${AEVATAR_PROTOCOL_SCHEME}://oauth-callback`;
+  }
 
-    return callbackUrl.toString();
+  private getNyxIdIssuer(): string {
+    if (!AUTH_GENERIC_OIDC_ISSUER) {
+      throw new Error('AUTH_GENERIC_OIDC_ISSUER is required for desktop NyxID OAuth');
+    }
+
+    return AUTH_GENERIC_OIDC_ISSUER.replace(/\/+$/, '');
+  }
+
+  private getNyxIdClientId(): string {
+    if (!AUTH_GENERIC_OIDC_ID) {
+      throw new Error('AUTH_GENERIC_OIDC_ID is required for desktop NyxID OAuth');
+    }
+
+    return AUTH_GENERIC_OIDC_ID;
+  }
+
+  private async getTokenEndpoint(): Promise<string> {
+    const issuer = this.getNyxIdIssuer();
+    const discoveryUrl = new URL('/.well-known/openid-configuration', `${issuer}/`).toString();
+    const response = await netFetch(discoveryUrl, {
+      headers: { Accept: 'application/json' },
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      throw new Error(`NyxID discovery failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as { token_endpoint?: string };
+    if (!data.token_endpoint) {
+      throw new Error('NyxID discovery document is missing token_endpoint');
+    }
+
+    return data.token_endpoint;
   }
 
   /**
@@ -81,10 +111,10 @@ export default class AuthCtr extends ControllerModule {
     const remoteUrl = await this.remoteServerConfigCtr.getRemoteServerUrl(config);
 
     // Cache remote server URL for subsequent polling
-    this.cachedRemoteUrl = remoteUrl;
+      this.cachedRemoteUrl = remoteUrl ?? null;
 
     logger.info(
-      `Requesting OAuth authorization, storageMode:${config.storageMode} server URL: ${remoteUrl}`,
+      `Requesting NyxID authorization, storageMode:${config.storageMode} server URL: ${remoteUrl}`,
     );
     try {
       // Generate PKCE parameters
@@ -97,23 +127,19 @@ export default class AuthCtr extends ControllerModule {
       this.authRequestState = crypto.randomBytes(16).toString('hex');
       logger.debug(`Generated state parameter: ${this.authRequestState}`);
 
-      // Construct authorization URL with new redirect_uri
-      const authUrl = new URL('/oidc/auth', remoteUrl);
-      const redirectUri = this.constructRedirectUri(remoteUrl);
+      const authUrl = new URL('/oauth/authorize', this.getNyxIdIssuer());
+      const redirectUri = this.constructRedirectUri();
 
       logger.info('redirectUri', redirectUri);
 
-      // Add query parameters
       authUrl.search = querystring.stringify({
-        client_id: 'lobehub-desktop',
+        client_id: this.getNyxIdClientId(),
         code_challenge: codeChallenge,
         code_challenge_method: 'S256',
         prompt: 'consent',
         redirect_uri: redirectUri,
-        // https://github.com/lobehub/lobe-chat/pull/8450
-        resource: 'urn:lobehub:chat',
         response_type: 'code',
-        scope: 'profile email offline_access',
+        scope: DEFAULT_SCOPE,
         state: this.authRequestState,
       });
 
@@ -125,17 +151,17 @@ export default class AuthCtr extends ControllerModule {
 
       this.broadcastAuthorizationProgress({
         elapsed: 0,
-        maxPollTime: MAX_POLL_TIME,
+        maxPollTime: 0,
         phase: 'browser_opened',
       });
-
-      // Start polling for credentials
-      this.startPolling();
 
       return { success: true };
     } catch (error) {
       logger.error('Authorization request failed:', error);
-      return { error: error.message, success: false };
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        success: false,
+      };
     }
   }
 
@@ -149,7 +175,7 @@ export default class AuthCtr extends ControllerModule {
       this.clearAuthorizationState();
       this.broadcastAuthorizationProgress({
         elapsed: 0,
-        maxPollTime: MAX_POLL_TIME,
+        maxPollTime: 0,
         phase: 'cancelled',
       });
       return { success: true };
@@ -183,103 +209,11 @@ export default class AuthCtr extends ControllerModule {
   }
 
   /**
-   * Start polling mechanism to get credentials
-   */
-  private startPolling() {
-    if (!this.authRequestState) {
-      logger.error('No handoff ID available for polling');
-      return;
-    }
-
-    logger.info('Starting credential polling');
-
-    const startTime = Date.now();
-
-    // Broadcast initial state
-    this.broadcastAuthorizationProgress({
-      elapsed: 0,
-      maxPollTime: MAX_POLL_TIME,
-      phase: 'waiting_for_auth',
-    });
-
-    this.pollingInterval = setInterval(async () => {
-      const elapsed = Date.now() - startTime;
-
-      // Broadcast progress on every tick
-      this.broadcastAuthorizationProgress({
-        elapsed,
-        maxPollTime: MAX_POLL_TIME,
-        phase: 'waiting_for_auth',
-      });
-
-      try {
-        // Check if polling has timed out
-        if (elapsed > MAX_POLL_TIME) {
-          logger.warn('Credential polling timed out');
-          this.clearAuthorizationState();
-          this.broadcastAuthorizationFailed('Authorization timed out');
-          return;
-        }
-
-        // Poll for credentials
-        const result = await this.pollForCredentials();
-
-        if (result) {
-          logger.info('Successfully received credentials from polling');
-          this.stopPolling();
-
-          // Broadcast verifying state
-          this.broadcastAuthorizationProgress({
-            elapsed,
-            maxPollTime: MAX_POLL_TIME,
-            phase: 'verifying',
-          });
-
-          // Validate state parameter
-          if (result.state !== this.authRequestState) {
-            logger.error(
-              `Invalid state parameter: expected ${this.authRequestState}, received ${result.state}`,
-            );
-            this.broadcastAuthorizationFailed('Invalid state parameter');
-            return;
-          }
-
-          // Exchange code for tokens
-          const exchangeResult = await this.exchangeCodeForToken(result.code, this.codeVerifier!);
-
-          if (exchangeResult.success) {
-            logger.info('Authorization successful');
-            this.broadcastAuthorizationSuccessful();
-          } else {
-            logger.warn(`Authorization failed: ${exchangeResult.error || 'Unknown error'}`);
-            this.broadcastAuthorizationFailed(exchangeResult.error || 'Unknown error');
-          }
-        }
-      } catch (error) {
-        logger.error('Error during credential polling:', error);
-        this.clearAuthorizationState();
-        this.broadcastAuthorizationFailed('Polling error: ' + error.message);
-      }
-    }, POLL_INTERVAL);
-  }
-
-  /**
-   * Stop polling
-   */
-  private stopPolling() {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
-    }
-  }
-
-  /**
    * Clear authorization state
    * Called before starting a new authorization flow or after authorization failure/timeout
    */
   private clearAuthorizationState() {
     logger.debug('Clearing authorization state');
-    this.stopPolling();
     this.codeVerifier = null;
     this.authRequestState = null;
     this.cachedRemoteUrl = null;
@@ -308,7 +242,7 @@ export default class AuthCtr extends ControllerModule {
         const result = await this.remoteServerConfigCtr.refreshAccessToken();
         if (result.success) {
           logger.info('Auto-refresh successful');
-          this.broadcastTokenRefreshed();
+          await this.broadcastTokenRefreshed();
         } else {
           logger.error(`Auto-refresh failed after retries: ${result.error}`);
 
@@ -346,65 +280,6 @@ export default class AuthCtr extends ControllerModule {
   }
 
   /**
-   * Poll for credentials
-   * Sends HTTP request directly to remote server
-   */
-  private async pollForCredentials(): Promise<{ code: string; state: string } | null> {
-    if (!this.authRequestState || !this.cachedRemoteUrl) {
-      return null;
-    }
-
-    try {
-      // Use cached remote server URL
-      const remoteUrl = this.cachedRemoteUrl;
-
-      // Construct request URL
-      const url = new URL('/oidc/handoff', remoteUrl);
-      url.searchParams.set('id', this.authRequestState);
-      url.searchParams.set('client', 'desktop');
-
-      logger.debug(`Polling for credentials: ${url.toString()}`);
-
-      // Use Electron net.fetch to respect system CA store (self-signed/private CA certs)
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      appendVercelCookie(headers);
-      const response = await netFetch(url.toString(), { headers, method: 'GET' });
-
-      // Check response status
-      if (response.status === 404) {
-        // Credentials not ready yet, this is normal
-        return null;
-      }
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      // Parse response data
-      const data = (await response.json()) as {
-        data: {
-          id: string;
-          payload: { code: string; state: string };
-        };
-        success: boolean;
-      };
-
-      if (data.success && data.data?.payload) {
-        logger.debug('Successfully retrieved credentials from handoff');
-        return {
-          code: data.data.payload.code,
-          state: data.data.payload.state,
-        };
-      }
-
-      return null;
-    } catch (error) {
-      logger.debug('Polling attempt failed (this is normal):', error.message);
-      return null;
-    }
-  }
-
-  /**
    * Refresh access token
    * This method includes retry mechanism via RemoteServerConfigCtr.refreshAccessToken()
    */
@@ -417,7 +292,7 @@ export default class AuthCtr extends ControllerModule {
       if (result.success) {
         logger.info('Token refresh successful via AuthCtr call.');
         // Notify render process that token has been refreshed
-        this.broadcastTokenRefreshed();
+        await this.broadcastTokenRefreshed();
         // Restart auto-refresh timer with new expiration time
         this.startAutoRefresh();
         return { success: true };
@@ -460,24 +335,24 @@ export default class AuthCtr extends ControllerModule {
   /**
    * Exchange authorization code for token
    */
-  private async exchangeCodeForToken(code: string, codeVerifier: string) {
-    if (!this.cachedRemoteUrl) {
-      throw new Error('No cached remote URL available for token exchange');
-    }
-
-    const remoteUrl = this.cachedRemoteUrl;
+  private async exchangeCodeForToken(
+    code: string,
+    codeVerifier: string,
+  ): Promise<
+    | { payload: NyxIdAuthorizationPayload; success: true }
+    | { error: string; success: false }
+  > {
     logger.info('Starting to exchange authorization code for token');
     try {
-      const tokenUrl = new URL('/oidc/token', remoteUrl);
+      const tokenUrl = await this.getTokenEndpoint();
       logger.debug(`Constructed token exchange URL: ${tokenUrl.toString()}`);
 
-      // Construct request body
       const body = querystring.stringify({
-        client_id: 'lobehub-desktop',
+        client_id: this.getNyxIdClientId(),
         code,
         code_verifier: codeVerifier,
         grant_type: 'authorization_code',
-        redirect_uri: this.constructRedirectUri(remoteUrl),
+        redirect_uri: this.constructRedirectUri(),
       });
 
       logger.debug('Sending token exchange request');
@@ -486,7 +361,7 @@ export default class AuthCtr extends ControllerModule {
         'Content-Type': 'application/x-www-form-urlencoded',
       };
       appendVercelCookie(tokenHeaders);
-      const response = await netFetch(tokenUrl.toString(), {
+      const response = await netFetch(tokenUrl, {
         body,
         headers: tokenHeaders,
         method: 'POST',
@@ -530,8 +405,7 @@ export default class AuthCtr extends ControllerModule {
       );
       logger.info('Successfully saved exchanged tokens');
 
-      // Set server to active state
-      logger.debug(`Setting remote server to active state: ${remoteUrl}`);
+      logger.debug(`Setting remote server to active state: ${this.cachedRemoteUrl}`);
       await this.remoteServerConfigCtr.setRemoteServerConfig({ active: true });
 
       // Start auto-refresh timer
@@ -539,11 +413,23 @@ export default class AuthCtr extends ControllerModule {
 
       // Connect to device gateway after successful login
       this.connectGateway();
+      this.clearAuthorizationState();
 
-      return { success: true };
+      return {
+        payload: this.createNyxIdAuthorizationPayload(
+          data.access_token,
+          data.refresh_token,
+          data.expires_in,
+        ),
+        success: true,
+      };
     } catch (error) {
       logger.error('Exchanging authorization code failed:', error);
-      return { error: error.message, success: false };
+      this.clearAuthorizationState();
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        success: false,
+      };
     }
   }
 
@@ -563,13 +449,14 @@ export default class AuthCtr extends ControllerModule {
   /**
    * Broadcast token refreshed event
    */
-  private broadcastTokenRefreshed() {
+  private async broadcastTokenRefreshed() {
     logger.debug('Broadcasting tokenRefreshed event to all windows');
+    const payload = await this.getCurrentNyxIdAuthorizationPayload();
     const allWindows = BrowserWindow.getAllWindows();
 
     for (const win of allWindows) {
       if (!win.isDestroyed()) {
-        win.webContents.send('tokenRefreshed');
+        win.webContents.send('tokenRefreshed', payload);
       }
     }
   }
@@ -577,13 +464,13 @@ export default class AuthCtr extends ControllerModule {
   /**
    * Broadcast authorization successful event
    */
-  private broadcastAuthorizationSuccessful() {
+  private broadcastAuthorizationSuccessful(payload: NyxIdAuthorizationPayload) {
     logger.debug('Broadcasting authorizationSuccessful event to all windows');
     const allWindows = BrowserWindow.getAllWindows();
 
     for (const win of allWindows) {
       if (!win.isDestroyed()) {
-        win.webContents.send('authorizationSuccessful');
+        win.webContents.send('authorizationSuccessful', payload);
       }
     }
   }
@@ -680,7 +567,6 @@ export default class AuthCtr extends ControllerModule {
    */
   cleanup() {
     logger.debug('Cleaning up AuthCtr timers');
-    this.stopPolling();
     this.stopAutoRefresh();
   }
 
@@ -741,7 +627,7 @@ export default class AuthCtr extends ControllerModule {
     const refreshResult = await this.remoteServerConfigCtr.refreshAccessToken();
     if (refreshResult.success) {
       logger.info('Proactive token refresh successful');
-      this.broadcastTokenRefreshed();
+      await this.broadcastTokenRefreshed();
       this.startAutoRefresh();
     } else {
       logger.error(`Proactive token refresh failed: ${refreshResult.error}`);
@@ -793,5 +679,64 @@ export default class AuthCtr extends ControllerModule {
     } catch (error) {
       logger.error('Error during app activation refresh check:', error);
     }
+  }
+
+  @protocolHandler('oauth-callback')
+  async handleOAuthCallback(params: Record<string, string>): Promise<boolean> {
+    const code = params.code;
+    const state = params.state;
+
+    if (!code || !state || !this.authRequestState || !this.codeVerifier) {
+      this.broadcastAuthorizationFailed('Invalid NyxID callback parameters');
+      return false;
+    }
+
+    this.broadcastAuthorizationProgress({
+      elapsed: 0,
+      maxPollTime: 0,
+      phase: 'verifying',
+    });
+
+    if (state !== this.authRequestState) {
+      logger.error(`Invalid state parameter: expected ${this.authRequestState}, received ${state}`);
+      this.clearAuthorizationState();
+      this.broadcastAuthorizationFailed('Invalid state parameter');
+      return false;
+    }
+
+    const exchangeResult = await this.exchangeCodeForToken(code, this.codeVerifier);
+
+    if (exchangeResult.success) {
+      logger.info('Authorization successful');
+      this.broadcastAuthorizationSuccessful(exchangeResult.payload);
+      return true;
+    }
+
+    logger.warn(`Authorization failed: ${exchangeResult.error || 'Unknown error'}`);
+    this.broadcastAuthorizationFailed(exchangeResult.error || 'Unknown error');
+    return false;
+  }
+
+  private createNyxIdAuthorizationPayload(
+    accessToken: string,
+    refreshToken?: string,
+    expiresIn?: number,
+  ): NyxIdAuthorizationPayload {
+    return {
+      accessToken,
+      expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
+      refreshToken,
+    };
+  }
+
+  private async getCurrentNyxIdAuthorizationPayload(): Promise<NyxIdAuthorizationPayload> {
+    const accessToken = await this.remoteServerConfigCtr.getAccessToken();
+    const refreshToken = await this.remoteServerConfigCtr.getRefreshToken();
+
+    return {
+      accessToken: accessToken || '',
+      expiresAt: this.remoteServerConfigCtr.getTokenExpiresAt(),
+      refreshToken: refreshToken || undefined,
+    };
   }
 }

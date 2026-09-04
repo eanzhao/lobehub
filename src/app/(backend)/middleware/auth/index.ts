@@ -5,12 +5,16 @@ import type { ClientSecretPayload } from '@lobechat/types';
 import { ChatErrorType } from '@lobechat/types';
 
 import { auth } from '@/auth';
+import {
+  extractNyxIdAccessTokenFromCookieHeader,
+  refreshNyxIdSessionFromCookies,
+} from '@/business/server/nyxid-auth';
 import { getServerDB } from '@/database/core/db-adaptor';
 import type { LobeChatDatabase } from '@/database/type';
 import { LOBE_CHAT_OIDC_AUTH_HEADER } from '@/envs/auth';
 import { extractTraceContext, injectActiveTraceHeaders } from '@/libs/observability/traceparent';
 import { assertOIDCUserActive } from '@/libs/oidc-provider/access-control';
-import { validateOIDCJWT } from '@/libs/oidc-provider/jwt';
+import { ensureOIDCUserRecord, validateOIDCJWT } from '@/libs/oidc-provider/jwt';
 import { createErrorResponse } from '@/utils/errorResponse';
 
 type RequestOptions = { params: Promise<{ provider?: string }> };
@@ -83,12 +87,22 @@ export const checkAuth =
 
     let userId: string;
 
+    let refreshedNyxIdSession;
+
     try {
       // OIDC authentication (CLI)
-      const oidcAuthorization = req.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER);
+      const cookieHeader = req.headers.get('cookie');
+      refreshedNyxIdSession = await refreshNyxIdSessionFromCookies(cookieHeader, {
+        secure: new URL(req.url).protocol === 'https:',
+      });
+      const oidcAuthorization =
+        req.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER) ||
+        refreshedNyxIdSession?.tokenResponse.accessToken ||
+        extractNyxIdAccessTokenFromCookieHeader(cookieHeader);
       if (oidcAuthorization) {
         const oidc = await validateOIDCJWT(oidcAuthorization);
         userId = oidc.userId;
+        await ensureOIDCUserRecord(serverDB, oidc);
         await assertOIDCUserActive(serverDB, userId);
       } else {
         // Better Auth session authentication (web)
@@ -104,7 +118,9 @@ export const checkAuth =
       }
     } catch (e) {
       const params = await options.params;
-      const oidcAuthorization = req.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER);
+      const oidcAuthorization =
+        req.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER) ||
+        extractNyxIdAccessTokenFromCookieHeader(req.headers.get('cookie'));
 
       // Only log OIDC auth failures — better-auth session failures are a common
       // baseline (unauthenticated browser hits) and would otherwise flood logs.
@@ -146,7 +162,15 @@ export const checkAuth =
 
       const error = errorContent || e;
 
-      return createErrorResponse(errorType, { error, ...res, provider: params?.provider });
+      const response = createErrorResponse(errorType, { error, ...res, provider: params?.provider });
+
+      if (refreshedNyxIdSession) {
+        for (const setCookieHeader of refreshedNyxIdSession.setCookieHeaders) {
+          response.headers.append('Set-Cookie', setCookieHeader);
+        }
+      }
+
+      return response;
     }
 
     const jwtPayload: ClientSecretPayload = { userId };
@@ -168,6 +192,11 @@ export const checkAuth =
 
     try {
       const headers = new Headers(res.headers);
+      if (refreshedNyxIdSession) {
+        for (const setCookieHeader of refreshedNyxIdSession.setCookieHeaders) {
+          headers.append('Set-Cookie', setCookieHeader);
+        }
+      }
       const traceparent = injectActiveTraceHeaders(headers);
       if (!traceparent) {
         return res;

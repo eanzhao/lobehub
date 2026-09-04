@@ -4,7 +4,7 @@ import { URL } from 'node:url';
 import type { DataSyncConfig } from '@lobechat/electron-client-ipc';
 import { safeStorage, session as electronSession } from 'electron';
 
-import { OFFICIAL_CLOUD_SERVER } from '@/const/env';
+import { AUTH_GENERIC_OIDC_ID, AUTH_GENERIC_OIDC_ISSUER, OFFICIAL_CLOUD_SERVER } from '@/const/env';
 import GatewayConnectionService from '@/services/gatewayConnectionSrv';
 import { appendVercelCookie } from '@/utils/http-headers';
 import { createLogger } from '@/utils/logger';
@@ -422,26 +422,22 @@ export default class RemoteServerConfigCtr extends ControllerModule {
         return { error: 'No refresh token available', success: false };
       }
 
-      // Construct refresh request
-      const remoteUrl = await this.getRemoteServerUrl(config);
+      const tokenUrl = await this.getNyxIdTokenEndpoint();
 
-      const tokenUrl = new URL('/oidc/token', remoteUrl);
-
-      // Construct request body
       const body = querystring.stringify({
-        client_id: 'lobehub-desktop',
+        client_id: this.getNyxIdClientId(),
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
       });
 
-      logger.debug(`Sending token refresh request to ${tokenUrl.toString()}`);
+      logger.debug(`Sending token refresh request to ${tokenUrl}`);
 
       // Send request
       const headers: Record<string, string> = {
         'Content-Type': 'application/x-www-form-urlencoded',
       };
       appendVercelCookie(headers);
-      const response = await netFetch(tokenUrl.toString(), { body, headers, method: 'POST' });
+      const response = await netFetch(tokenUrl, { body, headers, method: 'POST' });
 
       if (!response.ok) {
         // Try to parse error response
@@ -555,5 +551,43 @@ export default class RemoteServerConfigCtr extends ControllerModule {
     logger.debug(`Subscription webview session setup completed for partition: ${partition}`);
 
     return { success: true };
+  }
+
+  private getNyxIdClientId(): string {
+    if (!AUTH_GENERIC_OIDC_ID) {
+      throw new Error('AUTH_GENERIC_OIDC_ID is required for desktop NyxID OAuth');
+    }
+
+    return AUTH_GENERIC_OIDC_ID;
+  }
+
+  private getNyxIdIssuer(): string {
+    if (!AUTH_GENERIC_OIDC_ISSUER) {
+      throw new Error('AUTH_GENERIC_OIDC_ISSUER is required for desktop NyxID OAuth');
+    }
+
+    return AUTH_GENERIC_OIDC_ISSUER.replace(/\/+$/, '');
+  }
+
+  private async getNyxIdTokenEndpoint(): Promise<string> {
+    const discoveryUrl = new URL(
+      '/.well-known/openid-configuration',
+      `${this.getNyxIdIssuer()}/`,
+    ).toString();
+    const response = await netFetch(discoveryUrl, {
+      headers: { Accept: 'application/json' },
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      throw new Error(`NyxID discovery failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = (await response.json()) as { token_endpoint?: string };
+    if (!data.token_endpoint) {
+      throw new Error('NyxID discovery document is missing token_endpoint');
+    }
+
+    return data.token_endpoint;
   }
 }

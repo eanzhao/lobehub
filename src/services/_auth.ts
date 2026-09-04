@@ -10,6 +10,7 @@ import { clientApiKeyManager } from '@lobechat/utils/client';
 import { ModelProvider } from 'model-bank';
 
 import { aiProviderSelectors, useAiInfraStore } from '@/store/aiInfra';
+import { getNyxIdAuthStoreState } from '@/store/auth/nyxid-slice';
 
 import { resolveRuntimeProvider } from './chat/helper';
 
@@ -113,5 +114,14 @@ export const createPayloadWithKeyVaults = (provider: string) => {
 };
 
 export const createHeaderWithAuth = async (params?: AuthParams): Promise<HeadersInit> => {
-  return { ...params?.headers };
+  const headers = { ...params?.headers } as Record<string, string>;
+
+  if (params?.provider === 'aevatar') {
+    const token = getNyxIdAuthStoreState().token;
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  }
+
+  return headers;
 };

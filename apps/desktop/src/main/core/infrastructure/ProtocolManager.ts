@@ -2,7 +2,7 @@ import { app } from 'electron';
 
 import { isDev } from '@/const/env';
 import { createLogger } from '@/utils/logger';
-import { getProtocolScheme, parseProtocolUrl } from '@/utils/protocol';
+import { getProtocolScheme, getSupportedProtocolSchemes, parseProtocolUrl } from '@/utils/protocol';
 
 import type { App } from '../App';
 
@@ -15,12 +15,14 @@ const logger = createLogger('core:ProtocolManager');
 export class ProtocolManager {
   private app: App;
   private protocolScheme: string;
+  private protocolSchemes: string[];
   private pendingUrls: string[] = [];
 
   constructor(app: App) {
     logger.debug('Initializing ProtocolManager');
     this.app = app;
     this.protocolScheme = getProtocolScheme();
+    this.protocolSchemes = getSupportedProtocolSchemes();
     logger.info(`ProtocolManager initialized for scheme: ${this.protocolScheme}://`);
   }
 
@@ -40,7 +42,7 @@ export class ProtocolManager {
    * Register the application as default protocol client
    */
   private registerProtocolHandlers(): void {
-    logger.debug(`🔗 [Protocol] Registering protocol handlers for ${this.protocolScheme}://`);
+    logger.debug(`🔗 [Protocol] Registering protocol handlers for ${this.protocolSchemes.join(', ')}://`);
 
     // Debug info about current app
     logger.debug(`🔗 [Protocol] App name: ${app.name}`);
@@ -49,47 +51,35 @@ export class ProtocolManager {
     logger.debug(`🔗 [Protocol] Process argv[0]: ${process.argv[0]}`);
 
     // Check if already registered
-    const isCurrentlyRegistered = app.isDefaultProtocolClient(this.protocolScheme);
-    logger.debug(
-      `🔗 [Protocol] ${this.protocolScheme}:// is currently registered: ${isCurrentlyRegistered}`,
-    );
+    for (const scheme of this.protocolSchemes) {
+      const isCurrentlyRegistered = app.isDefaultProtocolClient(scheme);
+      logger.debug(`🔗 [Protocol] ${scheme}:// is currently registered: ${isCurrentlyRegistered}`);
 
-    // Register as default protocol client
-    let registrationResult: boolean;
+      let registrationResult: boolean;
 
-    if (isDev) {
-      // In development, use explicit parameters to ensure proper registration
-      const appPath = process.cwd(); // Current working directory (our app)
-      logger.debug(`🔗 [Protocol] Development mode: using explicit registration parameters`);
-      logger.debug(`🔗 [Protocol] Executable path: ${process.execPath}`);
-      logger.debug(`🔗 [Protocol] App path: ${appPath}`);
-      logger.debug(`🔗 [Protocol] Arguments: ${JSON.stringify([appPath])}`);
+      if (isDev) {
+        const appPath = process.cwd();
+        logger.debug(`🔗 [Protocol] Development mode: using explicit registration parameters`);
+        logger.debug(`🔗 [Protocol] Executable path: ${process.execPath}`);
+        logger.debug(`🔗 [Protocol] App path: ${appPath}`);
+        logger.debug(`🔗 [Protocol] Arguments: ${JSON.stringify([appPath])}`);
 
-      registrationResult = app.setAsDefaultProtocolClient(this.protocolScheme, process.execPath, [
-        appPath,
-      ]);
-    } else {
-      // In production, use simple registration
-      registrationResult = app.setAsDefaultProtocolClient(this.protocolScheme);
+        registrationResult = app.setAsDefaultProtocolClient(scheme, process.execPath, [appPath]);
+      } else {
+        registrationResult = app.setAsDefaultProtocolClient(scheme);
+      }
+
+      logger.debug(`🔗 [Protocol] Registration result for ${scheme}://: ${registrationResult}`);
+
+      if (!registrationResult) {
+        logger.error(`🔗 [Protocol] Failed to register as default protocol client for ${scheme}://`);
+      } else {
+        logger.debug(`🔗 [Protocol] Successfully registered ${scheme}:// protocol`);
+      }
+
+      const isRegisteredAfter = app.isDefaultProtocolClient(scheme);
+      logger.debug(`🔗 [Protocol] Final registration status for ${scheme}://: ${isRegisteredAfter}`);
     }
-
-    logger.debug(
-      `🔗 [Protocol] Registration result for ${this.protocolScheme}://: ${registrationResult}`,
-    );
-
-    if (!registrationResult) {
-      logger.error(
-        `🔗 [Protocol] Failed to register as default protocol client for ${this.protocolScheme}://`,
-      );
-    } else {
-      logger.debug(`🔗 [Protocol] Successfully registered ${this.protocolScheme}:// protocol`);
-    }
-
-    // Verify registration
-    const isRegisteredAfter = app.isDefaultProtocolClient(this.protocolScheme);
-    logger.debug(
-      `🔗 [Protocol] Final registration status for ${this.protocolScheme}://: ${isRegisteredAfter}`,
-    );
   }
 
   /**
@@ -128,14 +118,15 @@ export class ProtocolManager {
    * Extract protocol URL from command line arguments
    */
   private getProtocolUrlFromArgs(args: string[]): string | null {
-    const protocolPrefix = `${this.protocolScheme}://`;
     logger.debug(`🔗 [Protocol] Searching for protocol URLs in args: ${JSON.stringify(args)}`);
-    logger.debug(`🔗 [Protocol] Looking for prefix: ${protocolPrefix}`);
+    logger.debug(`🔗 [Protocol] Looking for prefixes: ${JSON.stringify(this.protocolSchemes)}`);
 
     for (const arg of args) {
-      if (arg.startsWith(protocolPrefix)) {
-        logger.debug(`🔗 [Protocol] Found protocol URL in args: ${arg}`);
-        return arg;
+      for (const scheme of this.protocolSchemes) {
+        if (arg.startsWith(`${scheme}://`)) {
+          logger.debug(`🔗 [Protocol] Found protocol URL in args: ${arg}`);
+          return arg;
+        }
       }
     }
     logger.debug(`🔗 [Protocol] No protocol URL found in args`);
@@ -175,7 +166,7 @@ export class ProtocolManager {
       logger.debug(`🔗 [Protocol] processProtocolUrl called with: ${url}`);
 
       // Basic URL validation - just check if it's our protocol
-      if (!url.startsWith(`${this.protocolScheme}://`)) {
+      if (!this.protocolSchemes.some((scheme) => url.startsWith(`${scheme}://`))) {
         logger.warn(`🔗 [Protocol] Invalid protocol scheme in URL: ${url}`);
         return;
       }
@@ -256,6 +247,6 @@ export class ProtocolManager {
    * Check if protocol is registered
    */
   public isRegistered(): boolean {
-    return app.isDefaultProtocolClient(this.protocolScheme);
+    return this.protocolSchemes.every((scheme) => app.isDefaultProtocolClient(scheme));
   }
 }
